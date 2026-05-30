@@ -1,0 +1,12 @@
+{
+  "name": "quackhacks3",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "pnpm --parallel --stream --filter @quackhacks/server --filter @quackhacks/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "db:push": "pnpm --filter @quackhacks/server db:push"
+  }
+}
