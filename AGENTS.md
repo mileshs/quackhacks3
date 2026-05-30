@@ -1,4 +1,4 @@
-SOME INFO ABOUT THE GAME:
+The following provides some info about the game we want to make. Use it as context when working on the project.
 
 Ordering 
 At the start of each round / game (poser)
@@ -18,11 +18,12 @@ Gets some time to send in some random pose, or to customize it
 
 
 
-Stack
+## Stack
 frontend: client: Vite w/ React (typescript)
 CV: MediaPipe pose (JavaScript) 
-backend: Node.js w/ express (ts)
-Socket.io for websockets
+backend: Node.js w/ hono (ts)
+Socket.io for websockets, also use hono websockets as well and integrate as best as possible
+Use the hono client package for the frontend. DO NOT make a custom wrapper on the frontend, you must use the hono client package for types api routes.
 
 p2.js physics, if needed
 p5.js graphics library and main game logic
@@ -31,6 +32,9 @@ Alternatively: use ml5.js (cons: more jank/laggy, pros: less lines of code/easie
 Node.js using node for the server
 PNPM monorepo
 .gitignore
+
+
+
 Players
 2 players:
 Player 1 has 3 lives, and has to fit in the holes for an entire track (~2 minutes) to survive
