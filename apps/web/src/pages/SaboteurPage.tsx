@@ -1,14 +1,171 @@
-import { useEffect, useRef, useState } from "react";
-import { starterPoses, type UniversalPose } from "@quackhacks/shared";
-import { UniversalHumanPreview } from "../components/UniversalHumanPreview";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import {
+  starterPoses,
+  universalHumanSize,
+  type JointName,
+  type UniversalJoint,
+  type UniversalPose
+} from "@quackhacks/shared";
 import { createSocketConnection } from "../lib/realtime";
+
+const SAVED_POSES_STORAGE_KEY = "quackhacks:saboteur:savedPoses";
+
+function loadSavedPoses(): UniversalPose[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SAVED_POSES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(
+      (pose): pose is UniversalPose =>
+        pose && typeof pose === "object" && Array.isArray((pose as UniversalPose).joints)
+    );
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedPoses(poses: UniversalPose[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(SAVED_POSES_STORAGE_KEY, JSON.stringify(poses));
+  } catch {
+    // Ignore quota or serialization errors; persistence is best-effort.
+  }
+}
+
+const GROUND_Y = 0.94;
+const MIN_DRAG_RADIUS = 0.025;
+const MAX_LEG_SPREAD_DEGREES = 120;
+// Wide play-area bounds (normalized). X is generous so the figure can roam
+// across the landscape stage; the top is pulled above the head so the bounding
+// box fully encloses the figure (head included).
+const POSE_MIN_X = -0.7;
+const POSE_MAX_X = 1.7;
+const POSE_MIN_Y = -0.08;
+const POSE_MAX_Y = GROUND_Y;
+
+// Landscape stage in SVG user units. The element keeps this aspect ratio so it
+// fills the wide stage column without letterboxing.
+const STAGE_WIDTH = 800;
+const STAGE_HEIGHT = 480;
+const STAGE_INSET = 28;
+const saboteurStageStyle: CSSProperties = {
+  width: "100%",
+  aspectRatio: `${STAGE_WIDTH} / ${STAGE_HEIGHT}`,
+  maxHeight: "82vh"
+};
+
+// Fit the bounding box into the stage with a uniform scale, then center it.
+const boundsWidthPx = (POSE_MAX_X - POSE_MIN_X) * universalHumanSize.width;
+const boundsHeightPx = (POSE_MAX_Y - POSE_MIN_Y) * universalHumanSize.height;
+const dummyScale = Math.min(
+  (STAGE_WIDTH - STAGE_INSET * 2) / boundsWidthPx,
+  (STAGE_HEIGHT - STAGE_INSET * 2) / boundsHeightPx
+);
+const boxScreenWidth = boundsWidthPx * dummyScale;
+const boxScreenHeight = boundsHeightPx * dummyScale;
+const dummyTranslateX = (STAGE_WIDTH - boxScreenWidth) / 2 - POSE_MIN_X * universalHumanSize.width * dummyScale;
+const dummyTranslateY = (STAGE_HEIGHT - boxScreenHeight) / 2 - POSE_MIN_Y * universalHumanSize.height * dummyScale;
+const dummyTransform = `translate(${dummyTranslateX} ${dummyTranslateY}) scale(${dummyScale})`;
+
+const stageBounds = {
+  x: POSE_MIN_X * universalHumanSize.width,
+  y: POSE_MIN_Y * universalHumanSize.height,
+  width: (POSE_MAX_X - POSE_MIN_X) * universalHumanSize.width,
+  height: (POSE_MAX_Y - POSE_MIN_Y) * universalHumanSize.height
+};
+const stageFloorY = GROUND_Y * universalHumanSize.height;
+const jointParents = {
+  head: "neck",
+  neck: "hips",
+  leftShoulder: "neck",
+  rightShoulder: "neck",
+  leftElbow: "leftShoulder",
+  rightElbow: "rightShoulder",
+  leftWrist: "leftElbow",
+  rightWrist: "rightElbow",
+  hips: null,
+  leftKnee: "hips",
+  rightKnee: "hips",
+  leftAnkle: "leftKnee",
+  rightAnkle: "rightKnee"
+} satisfies Record<JointName, JointName | null>;
+
+const jointChildren = {
+  head: [],
+  neck: ["head", "leftShoulder", "rightShoulder"],
+  leftShoulder: ["leftElbow"],
+  rightShoulder: ["rightElbow"],
+  leftElbow: ["leftWrist"],
+  rightElbow: ["rightWrist"],
+  leftWrist: [],
+  rightWrist: [],
+  hips: ["neck", "leftKnee", "rightKnee"],
+  leftKnee: ["leftAnkle"],
+  rightKnee: ["rightAnkle"],
+  leftAnkle: [],
+  rightAnkle: []
+} satisfies Record<JointName, JointName[]>;
+
+type JointRotationLimit = {
+  centerDegrees: number;
+  radiusDegrees: number;
+};
+
+const jointRotationLimits: Partial<Record<JointName, JointRotationLimit>> = {
+  // Keep the neck/head close to upright, with only a 45 degree lean left/right.
+  head: { centerDegrees: -90, radiusDegrees: 20 },
+  neck: { centerDegrees: -90, radiusDegrees: 40 },
+  // Shoulder anchors should stay near the upper torso instead of orbiting around
+  // the neck into impossible positions.
+  leftShoulder: { centerDegrees: 170, radiusDegrees: 10 },
+  rightShoulder: { centerDegrees: 10, radiusDegrees: 10 },
+  // Upper arms rotate from the shoulders. Keep these broad enough for big poses,
+  // but prevent full impossible rotations through the torso.
+  leftElbow: { centerDegrees: 90, radiusDegrees: 155 },
+  rightElbow: { centerDegrees: 90, radiusDegrees: 155 },
+  leftWrist: { centerDegrees: 90, radiusDegrees: 165 },
+  rightWrist: { centerDegrees: 90, radiusDegrees: 165 },
+  // Legs should stay in a plausible lower-body arc. The support-leg constraint
+  // still handles the exact planted foot position.
+  leftKnee: { centerDegrees: 90, radiusDegrees: 80 },
+  rightKnee: { centerDegrees: 90, radiusDegrees: 80 },
+  leftAnkle: { centerDegrees: 90, radiusDegrees: 95 },
+  rightAnkle: { centerDegrees: 90, radiusDegrees: 95 }
+};
 
 export function SaboteurPage() {
   const [poseIndex, setPoseIndex] = useState(1);
+  const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
+  const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
   const [socketStatus, setSocketStatus] = useState("Socket.IO connecting");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showHole, setShowHole] = useState(false);
   const socketRef = useRef<ReturnType<typeof createSocketConnection> | null>(null);
 
-  const pose = starterPoses[poseIndex] ?? starterPoses[0];
+  useEffect(() => {
+    persistSavedPoses(savedPoses);
+  }, [savedPoses]);
+
+  const poseList = useMemo(() => [...starterPoses, ...savedPoses], [savedPoses]);
+  const pose = poseList[poseIndex] ?? poseList[0];
+  const activePose = draftPose ?? pose;
+  const selectedSavedPoseIndex = poseIndex - starterPoses.length;
+  const canDeleteSelectedPose = !draftPose && selectedSavedPoseIndex >= 0 && selectedSavedPoseIndex < savedPoses.length;
 
   useEffect(() => {
     const socket = createSocketConnection();
@@ -24,7 +181,64 @@ export function SaboteurPage() {
   }, []);
 
   function randomizePose() {
-    setPoseIndex((currentIndex) => (currentIndex + 1) % starterPoses.length);
+    setDraftPose(null);
+    setPoseIndex((currentIndex) => {
+      if (poseList.length <= 1) {
+        return 0;
+      }
+
+      let nextIndex = currentIndex;
+      while (nextIndex === currentIndex) {
+        nextIndex = Math.floor(Math.random() * poseList.length);
+      }
+
+      return nextIndex;
+    });
+  }
+
+  function makePose() {
+    setSaveError(null);
+    setShowHole(false);
+    setDraftPose(createStandingPose());
+  }
+
+  function savePose() {
+    if (!draftPose) {
+      return;
+    }
+
+    const normalizedDraftPose = applyPoseConstraints(draftPose, "hips");
+
+    if (!hasGroundedFoot(normalizedDraftPose)) {
+      setSaveError("One foot must be touching the ground");
+      return;
+    }
+
+    const savedPose = {
+      ...normalizedDraftPose,
+      id: `custom-pose-${Date.now()}`,
+      name: `Custom Pose ${savedPoses.length + 1}`,
+      joints: normalizedDraftPose.joints.map((joint) => ({ ...joint }))
+    };
+
+    setSaveError(null);
+    setSavedPoses((currentPoses) => [...currentPoses, savedPose]);
+    setPoseIndex(starterPoses.length + savedPoses.length);
+    setDraftPose(null);
+    setSocketStatus(`Saved ${savedPose.name}`);
+  }
+
+  function deleteSelectedPose() {
+    if (!canDeleteSelectedPose) {
+      return;
+    }
+
+    setSavedPoses((currentPoses) => currentPoses.filter((_, index) => index !== selectedSavedPoseIndex));
+    setPoseIndex((currentIndex) => {
+      const nextPoseCount = Math.max(1, poseList.length - 1);
+      return Math.min(currentIndex, nextPoseCount - 1);
+    });
+    setSocketStatus(`Deleted ${pose.name}`);
   }
 
   function broadcastPose(selectedPose: UniversalPose) {
@@ -33,25 +247,997 @@ export function SaboteurPage() {
   }
 
   return (
-    <section className="page-grid">
+    <section
+      className="page-grid"
+      style={{
+        width: "min(1600px, calc(100% - 1rem))",
+        padding: "1rem 0"
+      }}
+    >
       <div className="page-heading">
-        <p className="eyebrow">Saboteur controls</p>
         <h1>Saboteur Screen</h1>
       </div>
-      <div className="split-layout">
-        <UniversalHumanPreview pose={pose} />
+      <div
+        className="split-layout"
+        style={{
+          gridTemplateColumns: "minmax(0, 1fr) minmax(230px, 280px)",
+          gap: "0.75rem"
+        }}
+      >
+        {showHole ? (
+          <SaboteurHolePreview pose={activePose} />
+        ) : draftPose ? (
+          <SaboteurPoseEditor pose={draftPose} onChange={setDraftPose} />
+        ) : (
+          <SaboteurPosePreview pose={pose} />
+        )}
         <div className="tool-panel">
           <h2>Pose Draft</h2>
-          <p className="large-status">{pose.name}</p>
+          <p className="large-status">{activePose.name}</p>
+          <button className="primary-action" type="button" onClick={makePose}>
+            Make Pose
+          </button>
+          {draftPose ? (
+            <button className="secondary-action" type="button" onClick={savePose}>
+              Save Pose
+            </button>
+          ) : null}
+          {saveError ? (
+            <p role="alert" style={{ color: "#ff8585", margin: "0.25rem 0", fontWeight: 600 }}>
+              {saveError}
+            </p>
+          ) : null}
           <button className="primary-action" type="button" onClick={randomizePose}>
             Randomize Pose
           </button>
-          <button className="secondary-action" type="button" onClick={() => broadcastPose(pose)}>
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={deleteSelectedPose}
+            disabled={!canDeleteSelectedPose}
+          >
+            Delete Pose
+          </button>
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={() => setShowHole((current) => !current)}
+          >
+            {showHole ? "Hide Hole" : "Preview Hole"}
+          </button>
+          <button className="secondary-action" type="button" onClick={() => broadcastPose(activePose)}>
             Send Temp Pose
           </button>
-          <code>{socketStatus}</code>
+          <p>{socketStatus}</p>
         </div>
       </div>
     </section>
   );
+}
+
+type SaboteurPoseEditorProps = {
+  pose: UniversalPose;
+  onChange: (pose: UniversalPose) => void;
+};
+
+const BLOB_FILL = "#2f86ff";
+
+type Point = { x: number; y: number };
+
+// The play-area bounding box plus the extended floor line, drawn inside the
+// dummy transform so it lines up exactly with the figure and movement bounds.
+function StageBounds() {
+  return (
+    <g>
+      <rect
+        x={stageBounds.x}
+        y={stageBounds.y}
+        width={stageBounds.width}
+        height={stageBounds.height}
+        rx={16}
+        fill="none"
+        stroke="rgba(255, 210, 74, 0.35)"
+        strokeWidth={2.5}
+        strokeDasharray="12 9"
+      />
+      <line
+        x1={stageBounds.x}
+        y1={stageFloorY}
+        x2={stageBounds.x + stageBounds.width}
+        y2={stageFloorY}
+        className="floor-line"
+      />
+    </g>
+  );
+}
+
+function BlobFigure({ jointMap, faceMode = "happy" }: { jointMap: Map<JointName, UniversalJoint>; faceMode?: "happy" | "squeeze" }) {
+  const W = universalHumanSize.width;
+  const H = universalHumanSize.height;
+
+  const at = (name: JointName): Point | null => {
+    const joint = jointMap.get(name);
+    return joint ? { x: joint.x * W, y: joint.y * H } : null;
+  };
+
+  const head = at("head");
+  const neck = at("neck");
+  const leftShoulder = at("leftShoulder");
+  const rightShoulder = at("rightShoulder");
+  const leftElbow = at("leftElbow");
+  const rightElbow = at("rightElbow");
+  const leftWrist = at("leftWrist");
+  const rightWrist = at("rightWrist");
+  const hips = at("hips");
+  const leftKnee = at("leftKnee");
+  const rightKnee = at("rightKnee");
+  const leftAnkle = at("leftAnkle");
+  const rightAnkle = at("rightAnkle");
+
+  const capsule = (a: Point | null, b: Point | null, width: number, key: string) => {
+    if (!a || !b) {
+      return null;
+    }
+    return (
+      <line
+        key={key}
+        x1={a.x}
+        y1={a.y}
+        x2={b.x}
+        y2={b.y}
+        stroke={BLOB_FILL}
+        strokeWidth={width}
+        strokeLinecap="round"
+      />
+    );
+  };
+
+  const blob = (point: Point | null, radius: number, key: string) => {
+    if (!point) {
+      return null;
+    }
+    return <circle key={key} cx={point.x} cy={point.y} r={radius} fill={BLOB_FILL} />;
+  };
+
+  const headCenter = head ?? neck ?? { x: W / 2, y: H * 0.13 };
+  const headRx = 50;
+  const headRy = 58;
+  const faceCx = headCenter.x;
+  const faceCy = headCenter.y + 6;
+
+  return (
+    <g>
+      {/* legs */}
+      {capsule(hips, leftKnee, 38, "leg-l-upper")}
+      {capsule(leftKnee, leftAnkle, 34, "leg-l-lower")}
+      {capsule(hips, rightKnee, 38, "leg-r-upper")}
+      {capsule(rightKnee, rightAnkle, 34, "leg-r-lower")}
+      {leftAnkle ? <ellipse cx={leftAnkle.x} cy={leftAnkle.y + 2} rx={19} ry={12} fill={BLOB_FILL} /> : null}
+      {rightAnkle ? <ellipse cx={rightAnkle.x} cy={rightAnkle.y + 2} rx={19} ry={12} fill={BLOB_FILL} /> : null}
+
+      {/* arms */}
+      {capsule(leftShoulder, leftElbow, 28, "arm-l-upper")}
+      {capsule(leftElbow, leftWrist, 26, "arm-l-lower")}
+      {capsule(rightShoulder, rightElbow, 28, "arm-r-upper")}
+      {capsule(rightElbow, rightWrist, 26, "arm-r-lower")}
+      {blob(leftWrist, 15, "hand-l")}
+      {blob(rightWrist, 15, "hand-r")}
+
+      {/* torso blob */}
+      {capsule(leftShoulder, rightShoulder, 44, "torso-shoulders")}
+      {capsule(neck, hips, 50, "torso-spine")}
+      {blob(neck, 24, "torso-neck")}
+      {blob(hips, 27, "torso-hips")}
+
+      {/* neck + head */}
+      {capsule(head, neck, 28, "neck-link")}
+      <ellipse cx={headCenter.x} cy={headCenter.y} rx={headRx} ry={headRy} fill={BLOB_FILL} />
+
+      {/* face */}
+      {faceMode === "squeeze" ? (
+        <g stroke="#0a0a0a" strokeLinecap="round" strokeLinejoin="round" fill="none">
+          <path d={`M ${faceCx - 24} ${faceCy - 8} l 14 8 l -14 8`} strokeWidth={3.4} />
+          <path d={`M ${faceCx + 24} ${faceCy - 8} l -14 8 l 14 8`} strokeWidth={3.4} />
+          <path d={`M ${faceCx} ${faceCy + 2} l 0 9 l 7 0`} strokeWidth={2.6} />
+          <path d={`M ${faceCx - 11} ${faceCy + 26} q 11 -10 22 0`} strokeWidth={3.4} />
+        </g>
+      ) : (
+        <g>
+          <ellipse cx={faceCx - 16} cy={faceCy - 4} rx={6} ry={9} fill="#0a0a0a" />
+          <ellipse cx={faceCx + 16} cy={faceCy - 4} rx={6} ry={9} fill="#0a0a0a" />
+          <path
+            d={`M ${faceCx} ${faceCy + 4} l 0 9 l 7 0`}
+            fill="none"
+            stroke="#0a0a0a"
+            strokeWidth={2.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d={`M ${faceCx - 13} ${faceCy + 24} q 13 12 26 0`}
+            fill="none"
+            stroke="#0a0a0a"
+            strokeWidth={3}
+            strokeLinecap="round"
+          />
+        </g>
+      )}
+    </g>
+  );
+}
+
+function SaboteurPosePreview({ pose }: { pose: UniversalPose }) {
+  const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
+
+  return (
+    <svg
+      className="human-preview"
+      viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
+      role="img"
+      aria-label={pose.name}
+      style={saboteurStageStyle}
+    >
+      <g transform={dummyTransform}>
+        <StageBounds />
+        <BlobFigure jointMap={jointMap} />
+      </g>
+    </svg>
+  );
+}
+
+const WALL_FILL = "#4a5b86";
+const HOLE_PADDING = 20;
+
+// The figure's solid outline, used as the cutout for the hole. `pad` inflates
+// every limb so the hole leaves generous room around the pose.
+function FigureSilhouette({
+  jointMap,
+  color,
+  pad
+}: {
+  jointMap: Map<JointName, UniversalJoint>;
+  color: string;
+  pad: number;
+}) {
+  const W = universalHumanSize.width;
+  const H = universalHumanSize.height;
+
+  const at = (name: JointName): Point | null => {
+    const joint = jointMap.get(name);
+    return joint ? { x: joint.x * W, y: joint.y * H } : null;
+  };
+
+  const head = at("head");
+  const neck = at("neck");
+  const leftShoulder = at("leftShoulder");
+  const rightShoulder = at("rightShoulder");
+  const leftElbow = at("leftElbow");
+  const rightElbow = at("rightElbow");
+  const leftWrist = at("leftWrist");
+  const rightWrist = at("rightWrist");
+  const hips = at("hips");
+  const leftKnee = at("leftKnee");
+  const rightKnee = at("rightKnee");
+  const leftAnkle = at("leftAnkle");
+  const rightAnkle = at("rightAnkle");
+
+  const seg = (a: Point | null, b: Point | null, width: number, key: string) =>
+    a && b ? (
+      <line
+        key={key}
+        x1={a.x}
+        y1={a.y}
+        x2={b.x}
+        y2={b.y}
+        stroke={color}
+        strokeWidth={width + pad * 2}
+        strokeLinecap="round"
+      />
+    ) : null;
+
+  const dot = (point: Point | null, radius: number, key: string) =>
+    point ? <circle key={key} cx={point.x} cy={point.y} r={radius + pad} fill={color} /> : null;
+
+  const headCenter = head ?? neck ?? { x: W / 2, y: H * 0.13 };
+
+  return (
+    <g>
+      {seg(hips, leftKnee, 38, "leg-l-upper")}
+      {seg(leftKnee, leftAnkle, 34, "leg-l-lower")}
+      {seg(hips, rightKnee, 38, "leg-r-upper")}
+      {seg(rightKnee, rightAnkle, 34, "leg-r-lower")}
+      {leftAnkle ? <ellipse cx={leftAnkle.x} cy={leftAnkle.y + 2} rx={19 + pad} ry={12 + pad} fill={color} /> : null}
+      {rightAnkle ? <ellipse cx={rightAnkle.x} cy={rightAnkle.y + 2} rx={19 + pad} ry={12 + pad} fill={color} /> : null}
+
+      {seg(leftShoulder, leftElbow, 28, "arm-l-upper")}
+      {seg(leftElbow, leftWrist, 26, "arm-l-lower")}
+      {seg(rightShoulder, rightElbow, 28, "arm-r-upper")}
+      {seg(rightElbow, rightWrist, 26, "arm-r-lower")}
+      {dot(leftWrist, 15, "hand-l")}
+      {dot(rightWrist, 15, "hand-r")}
+
+      {seg(leftShoulder, rightShoulder, 44, "torso-shoulders")}
+      {seg(neck, hips, 50, "torso-spine")}
+      {dot(neck, 24, "torso-neck")}
+      {dot(hips, 27, "torso-hips")}
+
+      {seg(head, neck, 28, "neck-link")}
+      <ellipse cx={headCenter.x} cy={headCenter.y} rx={50 + pad} ry={58 + pad} fill={color} />
+    </g>
+  );
+}
+
+// Shows the wall the pose carves out: a solid panel with the figure-shaped hole
+// punched through it. The stick figure itself is hidden here.
+function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
+  const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
+  const maskId = `hole-mask-${pose.id}`;
+
+  return (
+    <svg
+      className="human-preview"
+      viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
+      role="img"
+      aria-label={`Hole preview for ${pose.name}`}
+      style={saboteurStageStyle}
+    >
+      <defs>
+        <mask id={maskId} maskUnits="userSpaceOnUse">
+          <rect x={0} y={0} width={STAGE_WIDTH} height={STAGE_HEIGHT} fill="white" />
+          <g transform={dummyTransform}>
+            <FigureSilhouette jointMap={jointMap} color="black" pad={HOLE_PADDING} />
+          </g>
+        </mask>
+      </defs>
+      <rect x={0} y={0} width={STAGE_WIDTH} height={STAGE_HEIGHT} fill={WALL_FILL} mask={`url(#${maskId})`} />
+      <g transform={dummyTransform}>
+        <StageBounds />
+      </g>
+    </svg>
+  );
+}
+
+function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const latestPoseRef = useRef(pose);
+  const wriggleBaseRef = useRef<UniversalPose | null>(null);
+  const bodyDragRef = useRef<{ lastX: number; lastY: number } | null>(null);
+  const [activeJoint, setActiveJoint] = useState<JointName | null>(null);
+  const [isWriggling, setIsWriggling] = useState(false);
+  const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
+  const torsoCenter = getTorsoCenter(jointMap);
+
+  useEffect(() => {
+    latestPoseRef.current = pose;
+  }, [pose]);
+
+  useEffect(() => {
+    if (!isWriggling) {
+      return;
+    }
+
+    let animationFrameId = 0;
+    const legSide = Math.random() < 0.5 ? "left" : "right";
+    const startedAt = performance.now();
+
+    function animate(now: number) {
+      // Wave around a movable base pose so the figure keeps wriggling even while
+      // it is being dragged around the stage.
+      const basePose = wriggleBaseRef.current ?? latestPoseRef.current;
+      const elapsedSeconds = (now - startedAt) / 1000;
+      const nextPose = applyPoseConstraints(applyWavePose(basePose, elapsedSeconds, legSide), "hips");
+
+      latestPoseRef.current = nextPose;
+      onChange(nextPose);
+
+      animationFrameId = window.requestAnimationFrame(animate);
+    }
+
+    animationFrameId = window.requestAnimationFrame(animate);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [isWriggling, onChange]);
+
+  function moveActiveJoint(event: PointerEvent<SVGSVGElement>) {
+    const point = getPosePoint(event, svgRef.current);
+    if (!point) {
+      return;
+    }
+
+    // Dragging the stomach handle moves the whole figure (x and y) while it
+    // keeps wriggling: we translate the wriggle's base pose so the wave loop
+    // renders the moved-and-flailing figure.
+    const bodyDrag = bodyDragRef.current;
+    if (bodyDrag) {
+      const dx = point.x - bodyDrag.lastX;
+      const dy = point.y - bodyDrag.lastY;
+      bodyDrag.lastX = point.x;
+      bodyDrag.lastY = point.y;
+
+      const base = wriggleBaseRef.current ?? latestPoseRef.current;
+      wriggleBaseRef.current = translatePoseBy(base, dx, dy);
+      return;
+    }
+
+    if (!activeJoint) {
+      return;
+    }
+
+    const nextPose = rotateJointTowardPoint(latestPoseRef.current, activeJoint, point.x, point.y);
+    latestPoseRef.current = nextPose;
+    onChange(nextPose);
+  }
+
+  function stopPointerAction() {
+    setActiveJoint(null);
+    setIsWriggling(false);
+    bodyDragRef.current = null;
+    wriggleBaseRef.current = null;
+  }
+
+  return (
+    <svg
+      ref={svgRef}
+      className="human-preview"
+      viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
+      role="img"
+      aria-label="Editable saboteur pose"
+      onPointerMove={moveActiveJoint}
+      onPointerUp={stopPointerAction}
+      onPointerCancel={stopPointerAction}
+      style={{
+        cursor: activeJoint ? "grabbing" : "default",
+        touchAction: "none",
+        ...saboteurStageStyle
+      }}
+    >
+      <g transform={dummyTransform}>
+        <StageBounds />
+        <BlobFigure jointMap={jointMap} faceMode={isWriggling ? "squeeze" : "happy"} />
+        <circle
+          cx={torsoCenter.x * universalHumanSize.width}
+          cy={torsoCenter.y * universalHumanSize.height}
+          r="20"
+          fill="#ffd24a"
+          stroke="#e0a400"
+          strokeWidth={3}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setActiveJoint(null);
+            const point = getPosePoint(event, svgRef.current);
+            wriggleBaseRef.current = latestPoseRef.current;
+            bodyDragRef.current = point ? { lastX: point.x, lastY: point.y } : null;
+            setIsWriggling(true);
+          }}
+          style={{ cursor: isWriggling ? "grabbing" : "grab" }}
+        />
+        {pose.joints.map((joint) => (
+          <circle
+            key={joint.name}
+            cx={joint.x * universalHumanSize.width}
+            cy={joint.y * universalHumanSize.height}
+            r={getHandleRadius(joint.name)}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setIsWriggling(false);
+              setActiveJoint(joint.name);
+            }}
+            style={{
+              fill: activeJoint === joint.name ? "rgba(15, 32, 80, 0.55)" : "rgba(15, 32, 80, 0.3)",
+              stroke: "none",
+              cursor: activeJoint === joint.name ? "grabbing" : "grab"
+            }}
+          />
+        ))}
+        {(() => {
+          const hips = jointMap.get("hips");
+          if (!hips) {
+            return null;
+          }
+          const radius = getJointRadius("hips") * 0.5;
+          const offsetX = 0.06 * universalHumanSize.width;
+          const cy = hips.y * universalHumanSize.height;
+          const cx = hips.x * universalHumanSize.width;
+          return (
+            <>
+              <circle cx={cx - offsetX} cy={cy} r={radius} style={{ fill: "rgba(15, 32, 80, 0.3)", stroke: "none" }} />
+              <circle cx={cx + offsetX} cy={cy} r={radius} style={{ fill: "rgba(15, 32, 80, 0.3)", stroke: "none" }} />
+            </>
+          );
+        })()}
+      </g>
+    </svg>
+  );
+}
+
+function createStandingPose(): UniversalPose {
+  return {
+    id: "custom-tpose",
+    name: "Custom T-Pose",
+    difficulty: "standard",
+    joints: [
+      { name: "head", x: 0.5, y: 0.13, importance: 0.8 },
+      { name: "neck", x: 0.5, y: 0.24, importance: 1 },
+      { name: "leftShoulder", x: 0.35, y: 0.28, importance: 1 },
+      { name: "rightShoulder", x: 0.65, y: 0.28, importance: 1 },
+      { name: "leftElbow", x: 0.22, y: 0.28, importance: 0.8 },
+      { name: "rightElbow", x: 0.78, y: 0.28, importance: 0.8 },
+      { name: "leftWrist", x: 0.1, y: 0.28, importance: 0.6 },
+      { name: "rightWrist", x: 0.9, y: 0.28, importance: 0.6 },
+      { name: "hips", x: 0.5, y: 0.58, importance: 1 },
+      { name: "leftKnee", x: 0.43, y: 0.76, importance: 0.9 },
+      { name: "rightKnee", x: 0.57, y: 0.76, importance: 0.9 },
+      { name: "leftAnkle", x: 0.4, y: GROUND_Y, importance: 1 },
+      { name: "rightAnkle", x: 0.6, y: GROUND_Y, importance: 1 }
+    ]
+  };
+}
+
+// Arms and legs get noticeably larger grab handles so they're easy to drag.
+const LARGE_HANDLE_JOINTS = new Set<JointName>([
+  "leftElbow",
+  "rightElbow",
+  "leftWrist",
+  "rightWrist",
+  "leftKnee",
+  "rightKnee",
+  "leftAnkle",
+  "rightAnkle"
+]);
+
+function getHandleRadius(jointName: JointName) {
+  if (LARGE_HANDLE_JOINTS.has(jointName)) {
+    return 15;
+  }
+
+  return getJointRadius(jointName) * 0.6;
+}
+
+function getJointRadius(jointName: JointName) {
+  if (jointName === "head") {
+    return 16;
+  }
+
+  if (jointName === "hips" || jointName === "neck") {
+    return 12;
+  }
+
+  if (jointName.includes("Shoulder") || jointName.includes("Knee")) {
+    return 5;
+  }
+
+  return 5;
+}
+
+function rotateJointTowardPoint(pose: UniversalPose, jointName: JointName, x: number, y: number) {
+  if (jointName === "hips") {
+    return crouchByHips(pose, y);
+  }
+
+  const parentName = jointParents[jointName];
+
+  if (!parentName) {
+    return pose;
+  }
+
+  const joints = cloneJoints(pose.joints);
+  const parent = findJoint(joints, parentName);
+  const joint = findJoint(joints, jointName);
+
+  if (!parent || !joint) {
+    return pose;
+  }
+
+  if (Math.hypot(x - parent.x, y - parent.y) < MIN_DRAG_RADIUS) {
+    return pose;
+  }
+
+  const currentAngle = Math.atan2(joint.y - parent.y, joint.x - parent.x);
+  const nextAngle = clampJointAngle(jointName, Math.atan2(y - parent.y, x - parent.x));
+  rotateChain(joints, jointName, parent, nextAngle - currentAngle);
+
+  return applyPoseConstraints({ ...pose, joints }, jointName);
+}
+
+// Upper-body joints that travel with the hips during the vertical crouch.
+const UPPER_BODY_JOINTS: JointName[] = [
+  "hips",
+  "neck",
+  "head",
+  "leftShoulder",
+  "rightShoulder",
+  "leftElbow",
+  "rightElbow",
+  "leftWrist",
+  "rightWrist"
+];
+
+// Translate the whole figure (every joint) by a delta, keeping limb shapes
+// intact. Used by the stomach handle to move the dummy anywhere on the stage.
+function translatePoseBy(pose: UniversalPose, dx: number, dy: number) {
+  const joints = cloneJoints(pose.joints);
+
+  for (const joint of joints) {
+    joint.x += dx;
+    joint.y += dy;
+  }
+
+  enforcePoseBounds(joints);
+
+  return { ...pose, joints };
+}
+
+// Dragging the hip only crouches the figure vertically: the feet stay exactly
+// where they are, the knees bend, and the hips can neither rise above the
+// standing height (legs fully extended) nor drop below the feet.
+function crouchByHips(pose: UniversalPose, y: number) {
+  const joints = cloneJoints(pose.joints);
+  const hips = findJoint(joints, "hips");
+  const leftKnee = findJoint(joints, "leftKnee");
+  const rightKnee = findJoint(joints, "rightKnee");
+  const leftAnkle = findJoint(joints, "leftAnkle");
+  const rightAnkle = findJoint(joints, "rightAnkle");
+
+  if (!hips || !leftKnee || !rightKnee || !leftAnkle || !rightAnkle) {
+    return pose;
+  }
+
+  const leftThigh = Math.hypot(leftKnee.x - hips.x, leftKnee.y - hips.y);
+  const leftShin = Math.hypot(leftAnkle.x - leftKnee.x, leftAnkle.y - leftKnee.y);
+  const rightThigh = Math.hypot(rightKnee.x - hips.x, rightKnee.y - hips.y);
+  const rightShin = Math.hypot(rightAnkle.x - rightKnee.x, rightAnkle.y - rightKnee.y);
+
+  // The hips can't drop below the feet, and the reach clamp keeps them from
+  // rising past fully-extended legs.
+  const feetLevel = Math.min(leftAnkle.y, rightAnkle.y) - 0.03;
+  let target = { x: hips.x, y: clamp(y, POSE_MIN_Y, feetLevel) };
+  target = clampHipReach(target, leftAnkle, leftThigh + leftShin);
+  target = clampHipReach(target, rightAnkle, rightThigh + rightShin);
+
+  const yDelta = target.y - hips.y;
+  for (const jointName of UPPER_BODY_JOINTS) {
+    const joint = findJoint(joints, jointName);
+    if (joint) {
+      joint.y += yDelta;
+    }
+  }
+
+  solveKnee(hips, leftKnee, leftAnkle, leftThigh, leftShin, "left");
+  solveKnee(hips, rightKnee, rightAnkle, rightThigh, rightShin, "right");
+
+  enforcePoseBounds(joints);
+
+  return { ...pose, joints };
+}
+
+function clampHipReach(target: { x: number; y: number }, ankle: UniversalJoint, maxReach: number) {
+  const dx = target.x - ankle.x;
+  const dy = target.y - ankle.y;
+  const distance = Math.hypot(dx, dy);
+  const limit = maxReach - 0.001;
+
+  if (distance <= limit || distance === 0) {
+    return target;
+  }
+
+  const scale = limit / distance;
+  return { x: ankle.x + dx * scale, y: ankle.y + dy * scale };
+}
+
+// Two-bone inverse kinematics: places the knee so the thigh/shin lengths are
+// preserved while the foot stays planted, bending the knee outward to the side.
+function solveKnee(
+  hips: UniversalJoint,
+  knee: UniversalJoint,
+  ankle: UniversalJoint,
+  thigh: number,
+  shin: number,
+  side: "left" | "right"
+) {
+  const dx = ankle.x - hips.x;
+  const dy = ankle.y - hips.y;
+  const reach = Math.hypot(dx, dy);
+
+  if (reach === 0) {
+    return;
+  }
+
+  const minReach = Math.abs(thigh - shin) + 0.001;
+  const maxReach = thigh + shin - 0.001;
+  const distance = clamp(reach, minReach, maxReach);
+
+  const ux = dx / reach;
+  const uy = dy / reach;
+  const along = (distance * distance + thigh * thigh - shin * shin) / (2 * distance);
+  const height = Math.sqrt(Math.max(0, thigh * thigh - along * along));
+
+  const baseX = hips.x + ux * along;
+  const baseY = hips.y + uy * along;
+
+  let normalX = -uy;
+  let normalY = ux;
+  const outwardSign = side === "left" ? -1 : 1;
+  if ((normalX < 0 ? -1 : 1) !== outwardSign) {
+    normalX = -normalX;
+    normalY = -normalY;
+  }
+
+  knee.x = baseX + normalX * height;
+  knee.y = baseY + normalY * height;
+}
+
+function applyPoseConstraints(pose: UniversalPose, activeJoint: JointName): UniversalPose {
+  const joints = cloneJoints(pose.joints);
+
+  enforceRotationLimits(joints);
+  enforceLegSpread(joints, activeJoint);
+  enforceRotationLimits(joints);
+  enforcePoseBounds(joints);
+
+  return { ...pose, joints };
+}
+
+// At least one ankle is considered grounded when it sits on (or just above) the
+// floor line. Used to validate a pose before saving.
+function hasGroundedFoot(pose: UniversalPose) {
+  const leftAnkle = pose.joints.find((joint) => joint.name === "leftAnkle");
+  const rightAnkle = pose.joints.find((joint) => joint.name === "rightAnkle");
+  const tolerance = 0.02;
+
+  return Boolean(
+    (leftAnkle && leftAnkle.y >= GROUND_Y - tolerance) ||
+      (rightAnkle && rightAnkle.y >= GROUND_Y - tolerance)
+  );
+}
+
+function enforceLegSpread(joints: UniversalJoint[], activeJoint: JointName) {
+  const hips = findJoint(joints, "hips");
+  const leftAnkle = findJoint(joints, "leftAnkle");
+  const rightAnkle = findJoint(joints, "rightAnkle");
+
+  if (!hips || !leftAnkle || !rightAnkle) {
+    return;
+  }
+
+  const leftAngle = normalizeDegrees(toDegrees(Math.atan2(leftAnkle.y - hips.y, leftAnkle.x - hips.x)));
+  const rightAngle = normalizeDegrees(toDegrees(Math.atan2(rightAnkle.y - hips.y, rightAnkle.x - hips.x)));
+  const spread = normalizeDegrees(leftAngle - rightAngle);
+
+  if (spread <= MAX_LEG_SPREAD_DEGREES) {
+    return;
+  }
+
+  if (activeJoint.startsWith("left")) {
+    rotateLegTowardAngle(joints, "leftKnee", hips, rightAngle + MAX_LEG_SPREAD_DEGREES);
+    return;
+  }
+
+  rotateLegTowardAngle(joints, "rightKnee", hips, leftAngle - MAX_LEG_SPREAD_DEGREES);
+}
+
+function applyWavePose(pose: UniversalPose, elapsedSeconds: number, _legSide: "left" | "right"): UniversalPose {
+  const joints = cloneJoints(pose.joints);
+  const t = elapsedSeconds;
+  const leftArmWave = Math.sin(t * 21);
+  const rightArmWave = Math.sin(t * 21 + Math.PI * 0.7);
+  const leftLegWave = Math.sin(t * 16 + 1.3);
+  const rightLegWave = Math.sin(t * 16.5 + Math.PI * 0.9);
+  const torsoSway = Math.sin(t * 12.5) * 0.09;
+
+  rotateByParent(joints, "neck", torsoSway);
+  rotateByParent(joints, "leftElbow", -leftArmWave * 0.38);
+  rotateByParent(joints, "rightElbow", -rightArmWave * 0.38);
+  rotateByParent(joints, "leftWrist", leftArmWave * 0.46);
+  rotateByParent(joints, "rightWrist", rightArmWave * 0.46);
+  // Legs flail freely too; the feet are no longer pinned to the floor.
+  rotateByParent(joints, "leftKnee", leftLegWave * 0.2);
+  rotateByParent(joints, "rightKnee", rightLegWave * 0.2);
+  rotateByParent(joints, "leftAnkle", -leftLegWave * 0.28);
+  rotateByParent(joints, "rightAnkle", -rightLegWave * 0.28);
+
+  return { ...pose, joints };
+}
+
+function getPosePoint(event: PointerEvent<SVGSVGElement>, svg: SVGSVGElement | null) {
+  if (!svg) {
+    return null;
+  }
+
+  const screenMatrix = svg.getScreenCTM();
+
+  if (!screenMatrix) {
+    return null;
+  }
+
+  const point = svg.createSVGPoint();
+  point.x = event.clientX;
+  point.y = event.clientY;
+  const svgPoint = point.matrixTransform(screenMatrix.inverse());
+
+  return {
+    x: (svgPoint.x - dummyTranslateX) / dummyScale / universalHumanSize.width,
+    y: (svgPoint.y - dummyTranslateY) / dummyScale / universalHumanSize.height
+  };
+}
+
+function getTorsoCenter(jointMap: Map<JointName, UniversalJoint>) {
+  const neck = jointMap.get("neck");
+  const hips = jointMap.get("hips");
+
+  if (!neck || !hips) {
+    return { x: 0.5, y: 0.39 };
+  }
+
+  return {
+    x: (neck.x + hips.x) / 2,
+    y: (neck.y + hips.y) / 2
+  };
+}
+
+function findJoint(joints: UniversalJoint[], name: JointName) {
+  return joints.find((joint) => joint.name === name);
+}
+
+function cloneJoints(joints: UniversalJoint[]) {
+  return joints.map((joint) => ({ ...joint }));
+}
+
+function enforceRotationLimits(joints: UniversalJoint[]) {
+  for (const jointName of Object.keys(jointRotationLimits) as JointName[]) {
+    const parentName = jointParents[jointName];
+    const parent = parentName ? findJoint(joints, parentName) : null;
+    const joint = findJoint(joints, jointName);
+
+    if (!parent || !joint) {
+      continue;
+    }
+
+    const currentAngle = Math.atan2(joint.y - parent.y, joint.x - parent.x);
+    const limitedAngle = clampJointAngle(jointName, currentAngle);
+    rotateChain(joints, jointName, parent, shortestAngleDelta(currentAngle, limitedAngle));
+  }
+}
+
+function rotateByParent(joints: UniversalJoint[], jointName: JointName, angleDelta: number) {
+  const parentName = jointParents[jointName];
+  const parent = parentName ? findJoint(joints, parentName) : null;
+  const joint = findJoint(joints, jointName);
+
+  if (!parent || !joint) {
+    return;
+  }
+
+  const currentAngle = Math.atan2(joint.y - parent.y, joint.x - parent.x);
+  const nextAngle = clampJointAngle(jointName, currentAngle + angleDelta);
+  rotateChain(joints, jointName, parent, shortestAngleDelta(currentAngle, nextAngle));
+}
+
+function rotateChain(joints: UniversalJoint[], rootName: JointName, pivot: UniversalJoint, angleDelta: number) {
+  const root = findJoint(joints, rootName);
+
+  if (!root) {
+    return;
+  }
+
+  const namesToRotate = getSubtreeJointNames(rootName);
+
+  for (const name of namesToRotate) {
+    const joint = findJoint(joints, name);
+
+    if (joint) {
+      rotatePointAround(joint, pivot, angleDelta);
+    }
+  }
+}
+
+function getSubtreeJointNames(rootName: JointName): JointName[] {
+  return [rootName, ...jointChildren[rootName].flatMap((childName) => getSubtreeJointNames(childName))];
+}
+
+function rotatePointAround(joint: UniversalJoint, pivot: UniversalJoint, angleDelta: number) {
+  const dx = joint.x - pivot.x;
+  const dy = joint.y - pivot.y;
+  const cos = Math.cos(angleDelta);
+  const sin = Math.sin(angleDelta);
+
+  joint.x = pivot.x + dx * cos - dy * sin;
+  joint.y = pivot.y + dx * sin + dy * cos;
+}
+
+function enforcePoseBounds(joints: UniversalJoint[]) {
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (const joint of joints) {
+    minX = Math.min(minX, joint.x);
+    maxX = Math.max(maxX, joint.x);
+    minY = Math.min(minY, joint.y);
+    maxY = Math.max(maxY, joint.y);
+  }
+
+  let xDelta = 0;
+  let yDelta = 0;
+
+  if (minX < POSE_MIN_X) {
+    xDelta = POSE_MIN_X - minX;
+  }
+
+  if (maxX + xDelta > POSE_MAX_X) {
+    xDelta = POSE_MAX_X - maxX;
+  }
+
+  if (minY < POSE_MIN_Y) {
+    yDelta = POSE_MIN_Y - minY;
+  }
+
+  if (maxY + yDelta > POSE_MAX_Y) {
+    yDelta = POSE_MAX_Y - maxY;
+  }
+
+  if (xDelta === 0 && yDelta === 0) {
+    return;
+  }
+
+  for (const joint of joints) {
+    joint.x += xDelta;
+    joint.y += yDelta;
+  }
+}
+
+function rotateLegTowardAngle(
+  joints: UniversalJoint[],
+  legRootName: "leftKnee" | "rightKnee",
+  hips: UniversalJoint,
+  targetAnkleAngleDegrees: number
+) {
+  const ankleName = legRootName === "leftKnee" ? "leftAnkle" : "rightAnkle";
+  const ankle = findJoint(joints, ankleName);
+
+  if (!ankle) {
+    return;
+  }
+
+  const currentAngle = Math.atan2(ankle.y - hips.y, ankle.x - hips.x);
+  const targetAngle = (targetAnkleAngleDegrees * Math.PI) / 180;
+  rotateChain(joints, legRootName, hips, shortestAngleDelta(currentAngle, targetAngle));
+}
+
+function shortestAngleDelta(from: number, to: number) {
+  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
+function clampJointAngle(jointName: JointName, angleRadians: number) {
+  const limit = jointRotationLimits[jointName];
+
+  if (!limit) {
+    return angleRadians;
+  }
+
+  const center = degreesToRadians(limit.centerDegrees);
+  const radius = degreesToRadians(limit.radiusDegrees);
+  const delta = clamp(shortestAngleDelta(center, angleRadians), -radius, radius);
+
+  return center + delta;
+}
+
+function normalizeDegrees(degrees: number) {
+  return ((degrees % 360) + 360) % 360;
+}
+
+function toDegrees(radians: number) {
+  return (radians * 180) / Math.PI;
+}
+
+function degreesToRadians(degrees: number) {
+  return (degrees * Math.PI) / 180;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
