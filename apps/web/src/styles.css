@@ -485,9 +485,9 @@ dd {
 }
 
 .hand-chip.grab {
-  border-color: rgba(255, 225, 77, 0.85);
-  background: rgba(255, 225, 77, 0.16);
-  color: #ffe14d;
+  border-color: rgba(255, 36, 36, 0.85);
+  background: rgba(255, 36, 36, 0.16);
+  color: #ff5a5a;
 }
 
 .band-perfect {

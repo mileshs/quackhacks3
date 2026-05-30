@@ -34,18 +34,18 @@ type AthleteStageProps = {
 const HOLE_ASPECT = universalHumanSize.width / universalHumanSize.height;
 const HOLE_SCALE = 0.8;
 
-// Everything OUTSIDE the hole is a solid bright-blue wall; the hole itself is punched
-// clear so the live camera shows through it.
-const WALL_COLOR = "#0a84ff";
+// Everything OUTSIDE the hole is a solid bright-yellow wall; the hole itself is
+// punched clear so the live camera shows through it.
+const WALL_COLOR = "#ffd60a";
 // Backdrop used for the idle preview, so the cut-out hole is visible before the
 // camera starts.
 const IDLE_BACKDROP = "#0a1117";
 
 // The ragdoll dummy is a simplistic, single cohesive humanoid (capsule limbs + neck +
-// head) built from the live tracked body points, drawn as one solid bright-red shape.
-const RAGDOLL_COLOR = "#ff2424";
-// A closed/grabbing hand is highlighted in this accent so the grab reads at a glance.
-const HAND_GRAB_COLOR = "#ffe14d";
+// head) built from the live tracked body points, drawn as one solid bright-blue shape.
+const RAGDOLL_COLOR = "#0a84ff";
+// A closed/grabbing hand turns red so the grab reads at a glance.
+const HAND_GRAB_COLOR = "#ff2424";
 
 // MediaPipe pose landmark indices 0–10 are face (nose/eyes/ears/mouth); 11+ is body.
 const FIRST_BODY_LANDMARK = 11;
