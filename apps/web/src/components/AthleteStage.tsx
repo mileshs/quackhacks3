@@ -32,31 +32,46 @@ type AthleteStageProps = {
 const HOLE_ASPECT = universalHumanSize.width / universalHumanSize.height;
 const HOLE_SCALE = 0.8;
 
-// Everything OUTSIDE the hole is a semi-transparent tinted wall; the hole itself is
-// punched clear so the live camera shows through it.
-const WALL_TINT = "rgba(6, 14, 20, 0.66)";
-const HOLE_EDGE = "rgba(160, 247, 214, 0.7)";
-// Backdrop used for the idle preview, chosen lighter than the tinted wall so the
-// cut-out hole is visible before the camera starts.
-const IDLE_BACKDROP = "#14262f";
+// Everything OUTSIDE the hole is a solid bright-blue wall; the hole itself is punched
+// clear so the live camera shows through it.
+const WALL_COLOR = "#0a84ff";
+// Backdrop used for the idle preview, so the cut-out hole is visible before the
+// camera starts.
+const IDLE_BACKDROP = "#0a1117";
 
-// Reusable offscreen canvas: we paint the wall there and carve the hole out of it,
-// then composite over the camera so the carve never erases the camera pixels.
-let wallCanvas: HTMLCanvasElement | null = null;
-function getWallCtx(width: number, height: number): CanvasRenderingContext2D {
-  if (!wallCanvas) {
-    wallCanvas = document.createElement("canvas");
-  }
-  if (wallCanvas.width !== width) {
-    wallCanvas.width = width;
-  }
-  if (wallCanvas.height !== height) {
-    wallCanvas.height = height;
-  }
-  const ctx = wallCanvas.getContext("2d")!;
-  ctx.clearRect(0, 0, width, height);
-  return ctx;
+// The ragdoll dummy is a simplistic, single cohesive humanoid (capsule limbs + neck +
+// head) built from the live tracked body points, drawn as one solid bright-red shape.
+const RAGDOLL_COLOR = "#ff2424";
+
+// MediaPipe pose landmark indices 0–10 are face (nose/eyes/ears/mouth); 11+ is body.
+const FIRST_BODY_LANDMARK = 11;
+
+// Skeleton connections with both endpoints on the body (drops the face mesh lines).
+const BODY_CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS.filter(
+  (c) => c.start >= FIRST_BODY_LANDMARK && c.end >= FIRST_BODY_LANDMARK
+);
+
+function makeOffscreen(): (width: number, height: number) => CanvasRenderingContext2D {
+  let canvas: HTMLCanvasElement | null = null;
+  return (width, height) => {
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+    }
+    if (canvas.width !== width) {
+      canvas.width = width;
+    }
+    if (canvas.height !== height) {
+      canvas.height = height;
+    }
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, width, height);
+    return ctx;
+  };
 }
+
+// Reusable offscreen layer for the wall: we carve the hole out of it, then composite
+// over the camera so the carve never erases camera pixels.
+const getWallCtx = makeOffscreen();
 
 export function AthleteStage({
   targetPose,
@@ -80,6 +95,11 @@ export function AthleteStage({
   const [matchPercent, setMatchPercent] = useState(0);
   const [band, setBand] = useState<ScoreBand>("CRASH");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showDummy, setShowDummy] = useState(true);
+
+  // The render loop reads this through a ref so toggling doesn't rebuild the loop.
+  const showDummyRef = useRef(showDummy);
+  showDummyRef.current = showDummy;
 
   const stop = useCallback(() => {
     const wasActive = Boolean(stopLoopRef.current || streamRef.current);
@@ -145,7 +165,7 @@ export function AthleteStage({
 
       stopLoopRef.current = startPoseLoop(video, landmarker, ({ landmarks }) => {
         if (ctx) {
-          drawFrame(ctx, drawingUtils, video, landmarks, targetRef.current);
+          drawFrame(ctx, drawingUtils, video, landmarks, targetRef.current, showDummyRef.current);
         }
 
         if (landmarks) {
@@ -234,6 +254,14 @@ export function AthleteStage({
           <button
             className="secondary-action"
             type="button"
+            aria-pressed={showDummy}
+            onClick={() => setShowDummy((on) => !on)}
+          >
+            Dummy Overlay: {showDummy ? "On" : "Off"}
+          </button>
+          <button
+            className="secondary-action"
+            type="button"
             onClick={() => toggleFullscreen(canvasRef.current?.parentElement ?? null)}
           >
             Toggle Fullscreen
@@ -258,13 +286,14 @@ function toggleFullscreen(el: Element | null) {
   }
 }
 
-/** Draw one live frame: mirrored camera + raw skeleton, with the hole overlaid. */
+/** Draw one live frame: mirrored camera + optional ragdoll + skeleton, then the hole. */
 function drawFrame(
   ctx: CanvasRenderingContext2D,
   drawingUtils: DrawingUtils | null,
   video: HTMLVideoElement,
   landmarks: PoseFrame["landmarks"],
-  target: UniversalPose
+  target: UniversalPose,
+  showDummy: boolean
 ) {
   const { width, height } = ctx.canvas;
 
@@ -275,23 +304,135 @@ function drawFrame(
   ctx.drawImage(video, 0, 0, width, height);
 
   if (landmarks && drawingUtils) {
-    drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
+    // Body only — face mesh (eyes/mouth/ears) lines and dots are dropped.
+    drawingUtils.drawConnectors(landmarks, BODY_CONNECTIONS, {
       color: "#75e2be",
       lineWidth: 4
     });
-    drawingUtils.drawLandmarks(landmarks, { color: "#ffd65c", radius: 4 });
+    drawingUtils.drawLandmarks(landmarks.slice(FIRST_BODY_LANDMARK), {
+      color: "#ffd65c",
+      radius: 4
+    });
   }
   ctx.restore();
 
   // Hole is drawn un-mirrored: the saboteur's screen-left lines up with the player's
   // screen-left in the mirrored camera.
   drawHoleOverlay(ctx, target, width, height);
+
+  // The solid ragdoll sits on top of the blue wall so it's fully visible (mirrored to
+  // align with the camera).
+  if (showDummy && landmarks) {
+    ctx.save();
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+    drawRagdoll(ctx, landmarks, width, height);
+    ctx.restore();
+  }
 }
 
 /**
- * Tinted-wall overlay with a human-shaped hole punched clear. The area AROUND the
- * pose is a semi-transparent wall; the pose silhouette is left blank so the live
- * camera shows through it (the "hole in the wall" the athlete fits into).
+ * Simplistic ragdoll: capsule limbs, a trapezoid torso, and a head circle, scaled by
+ * the player's shoulder width so it tracks their actual body. Drawn in solid colors;
+ * the caller composites it at a single alpha (no double-darkened joints).
+ */
+function drawRagdoll(
+  ctx: CanvasRenderingContext2D,
+  landmarks: NonNullable<PoseFrame["landmarks"]>,
+  width: number,
+  height: number
+) {
+  type Pt = { x: number; y: number };
+  const pt = (i: number): Pt | null => {
+    const lm = landmarks[i];
+    if (!lm || (lm.visibility !== undefined && lm.visibility < 0.4)) {
+      return null;
+    }
+    return { x: lm.x * width, y: lm.y * height };
+  };
+
+  const ls = pt(11);
+  const rs = pt(12);
+  const lh = pt(23);
+  const rh = pt(24);
+  if (!ls || !rs || !lh || !rh) {
+    return;
+  }
+
+  const le = pt(13);
+  const re = pt(14);
+  const lw = pt(15);
+  const rw = pt(16);
+  const lk = pt(25);
+  const rk = pt(26);
+  const la = pt(27);
+  const ra = pt(28);
+  const nose = pt(0);
+
+  const shoulderW = Math.hypot(ls.x - rs.x, ls.y - rs.y) || width * 0.1;
+  const neck = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 };
+
+  const capsule = (a: Pt | null, b: Pt | null, w: number) => {
+    if (!a || !b) {
+      return;
+    }
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  };
+
+  const headR = shoulderW * 0.36;
+  const headC = nose ?? { x: neck.x, y: neck.y - headR * 1.3 };
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.fillStyle = RAGDOLL_COLOR;
+  ctx.strokeStyle = RAGDOLL_COLOR;
+
+  // Squared torso: the bottom corners sit directly under the shoulders (vertical
+  // sides) so it reads as a rectangle rather than a tapered trapezoid.
+  const torso = [ls, rs, { x: rs.x, y: rh.y }, { x: ls.x, y: lh.y }];
+  ctx.beginPath();
+  ctx.moveTo(torso[0].x, torso[0].y);
+  for (let i = 1; i < torso.length; i += 1) {
+    ctx.lineTo(torso[i].x, torso[i].y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // Slim rounded shoulder bar fuses the shoulders (and arm roots) into the torso
+  // without bulking up the top of the figure.
+  capsule(ls, rs, shoulderW * 0.3);
+
+  // Neck links the head to the torso so there's no gap; all parts overlap into one
+  // cohesive solid shape (everything is the same opaque red).
+  capsule(headC, neck, shoulderW * 0.3);
+
+  // Arms + legs as capsules (generous widths so they fuse with the torso).
+  capsule(ls, le, shoulderW * 0.26);
+  capsule(le, lw, shoulderW * 0.22);
+  capsule(rs, re, shoulderW * 0.26);
+  capsule(re, rw, shoulderW * 0.22);
+  capsule(lh, lk, shoulderW * 0.32);
+  capsule(lk, la, shoulderW * 0.26);
+  capsule(rh, rk, shoulderW * 0.32);
+  capsule(rk, ra, shoulderW * 0.26);
+
+  // Head.
+  ctx.beginPath();
+  ctx.arc(headC.x, headC.y, headR, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
+ * Solid bright-blue wall with a human-shaped hole punched clear. The area AROUND the
+ * pose is opaque blue; the pose silhouette is left blank so the live camera shows
+ * through it (the "hole in the wall" the athlete fits into).
  */
 function drawHoleOverlay(
   ctx: CanvasRenderingContext2D,
@@ -334,23 +475,12 @@ function drawHoleOverlay(
   // Everything below happens on the offscreen wall layer, so the only thing that
   // touches the main camera canvas is a plain source-over composite.
   const wallCtx = getWallCtx(width, height);
-  const rim = Math.max(3, regionW * 0.012);
 
-  // 1) Paint the full tinted wall.
-  wallCtx.fillStyle = WALL_TINT;
+  // 1) Paint the full solid blue wall.
+  wallCtx.fillStyle = WALL_COLOR;
   wallCtx.fillRect(0, 0, width, height);
 
-  // 2) Trace a glowing edge ring slightly larger than the hole.
-  wallCtx.save();
-  wallCtx.lineCap = "round";
-  wallCtx.lineJoin = "round";
-  wallCtx.strokeStyle = HOLE_EDGE;
-  wallCtx.fillStyle = HOLE_EDGE;
-  strokeLimbs(wallCtx, radius * 2 + rim * 2);
-  fillJoints(wallCtx, radius + rim);
-  wallCtx.restore();
-
-  // 3) Carve the pose silhouette clear (transparent = the hole), leaving the ring.
+  // 2) Carve the pose silhouette clear (transparent = the hole).
   wallCtx.save();
   wallCtx.globalCompositeOperation = "destination-out";
   wallCtx.lineCap = "round";
@@ -361,7 +491,7 @@ function drawHoleOverlay(
   fillJoints(wallCtx, radius);
   wallCtx.restore();
 
-  // 4) Composite the holed wall over the camera: camera shows through the hole,
-  //    tint everywhere else, glowing rim around the boundary.
+  // 3) Composite the holed wall over the camera: camera shows through the hole, solid
+  //    blue everywhere else.
   ctx.drawImage(wallCtx.canvas, 0, 0);
 }
