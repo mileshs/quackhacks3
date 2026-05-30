@@ -13,8 +13,10 @@ import {
 import {
   DrawingUtils,
   PoseLandmarker,
+  getHandLandmarker,
   getPoseLandmarker,
   startPoseLoop,
+  type HandInfo,
   type PoseFrame
 } from "../lib/poseTracker";
 
@@ -42,6 +44,8 @@ const IDLE_BACKDROP = "#0a1117";
 // The ragdoll dummy is a simplistic, single cohesive humanoid (capsule limbs + neck +
 // head) built from the live tracked body points, drawn as one solid bright-red shape.
 const RAGDOLL_COLOR = "#ff2424";
+// A closed/grabbing hand is highlighted in this accent so the grab reads at a glance.
+const HAND_GRAB_COLOR = "#ffe14d";
 
 // MediaPipe pose landmark indices 0–10 are face (nose/eyes/ears/mouth); 11+ is body.
 const FIRST_BODY_LANDMARK = 11;
@@ -96,6 +100,8 @@ export function AthleteStage({
   const [band, setBand] = useState<ScoreBand>("CRASH");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDummy, setShowDummy] = useState(true);
+  const [handStates, setHandStates] = useState<boolean[]>([]);
+  const lastHandUpdate = useRef(0);
 
   // The render loop reads this through a ref so toggling doesn't rebuild the loop.
   const showDummyRef = useRef(showDummy);
@@ -153,8 +159,11 @@ export function AthleteStage({
         canvas.height = video.videoHeight || 720;
       }
 
-      setStatus("Loading MediaPipe model");
-      const landmarker = await getPoseLandmarker();
+      setStatus("Loading MediaPipe models");
+      const [landmarker, handLandmarker] = await Promise.all([
+        getPoseLandmarker(),
+        getHandLandmarker()
+      ]);
 
       const ctx = canvas?.getContext("2d") ?? null;
       const drawingUtils = ctx ? new DrawingUtils(ctx) : null;
@@ -163,25 +172,44 @@ export function AthleteStage({
       setRunning(true);
       setSidebarOpen(false);
 
-      stopLoopRef.current = startPoseLoop(video, landmarker, ({ landmarks }) => {
-        if (ctx) {
-          drawFrame(ctx, drawingUtils, video, landmarks, targetRef.current, showDummyRef.current);
-        }
+      stopLoopRef.current = startPoseLoop(
+        video,
+        landmarker,
+        ({ landmarks, hands }) => {
+          if (ctx) {
+            drawFrame(
+              ctx,
+              drawingUtils,
+              video,
+              landmarks,
+              hands,
+              targetRef.current,
+              showDummyRef.current
+            );
+          }
 
-        if (landmarks) {
-          const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
-          const live = landmarksToUniversalPose(landmarks, aspect, { mirror: true });
-          if (live) {
-            const now = performance.now();
-            if (now - lastMatchUpdate.current > 120) {
-              lastMatchUpdate.current = now;
-              const percent = comparePoses(live, targetRef.current);
-              setMatchPercent(percent);
-              setBand(scoreBandFromMatch(percent));
+          const handNow = performance.now();
+          if (handNow - lastHandUpdate.current > 120) {
+            lastHandUpdate.current = handNow;
+            setHandStates(hands.map((hand) => hand.closed));
+          }
+
+          if (landmarks) {
+            const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
+            const live = landmarksToUniversalPose(landmarks, aspect, { mirror: true });
+            if (live) {
+              const now = performance.now();
+              if (now - lastMatchUpdate.current > 120) {
+                lastMatchUpdate.current = now;
+                const percent = comparePoses(live, targetRef.current);
+                setMatchPercent(percent);
+                setBand(scoreBandFromMatch(percent));
+              }
             }
           }
-        }
-      });
+        },
+        handLandmarker
+      );
     } catch (error) {
       setStatus(`Error: ${(error as Error).message}`);
       stop();
@@ -198,6 +226,17 @@ export function AthleteStage({
         <span className="match-band">{band}</span>
         <span className="match-percent">{matchPercent}%</span>
       </div>
+
+      {/* Hand open/closed (grab) indicator. */}
+      {handStates.length > 0 && (
+        <div className="hands-hud">
+          {handStates.map((closed, index) => (
+            <span key={index} className={`hand-chip ${closed ? "grab" : "open"}`}>
+              {closed ? "✊ Grab" : "✋ Open"}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Sidebar toggle. */}
       <button
@@ -292,6 +331,7 @@ function drawFrame(
   drawingUtils: DrawingUtils | null,
   video: HTMLVideoElement,
   landmarks: PoseFrame["landmarks"],
+  hands: HandInfo[],
   target: UniversalPose,
   showDummy: boolean
 ) {
@@ -326,19 +366,20 @@ function drawFrame(
     ctx.save();
     ctx.translate(width, 0);
     ctx.scale(-1, 1);
-    drawRagdoll(ctx, landmarks, width, height);
+    drawRagdoll(ctx, landmarks, hands, width, height);
     ctx.restore();
   }
 }
 
 /**
- * Simplistic ragdoll: capsule limbs, a trapezoid torso, and a head circle, scaled by
- * the player's shoulder width so it tracks their actual body. Drawn in solid colors;
- * the caller composites it at a single alpha (no double-darkened joints).
+ * Simplistic ragdoll: capsule limbs, a squared torso, head, and hands, scaled by the
+ * player's shoulder width so it tracks their actual body. Hands render open (spread
+ * fingers) or closed (a fist highlighted in the grab color) from the hand detector.
  */
 function drawRagdoll(
   ctx: CanvasRenderingContext2D,
   landmarks: NonNullable<PoseFrame["landmarks"]>,
+  hands: HandInfo[],
   width: number,
   height: number
 ) {
@@ -425,6 +466,56 @@ function drawRagdoll(
   ctx.beginPath();
   ctx.arc(headC.x, headC.y, headR, 0, Math.PI * 2);
   ctx.fill();
+
+  // Hands: match each detected hand to the nearest wrist, then draw it open (spread
+  // fingers, body red) or closed (a fist highlighted in the grab color).
+  const handAt = (wrist: Pt | null): HandInfo | null => {
+    if (!wrist) {
+      return null;
+    }
+    let best: HandInfo | null = null;
+    let bestDist = shoulderW * 1.3; // must be reasonably near the wrist to count
+    for (const hand of hands) {
+      const hw = hand.landmarks[0];
+      if (!hw) {
+        continue;
+      }
+      const d = Math.hypot(hw.x * width - wrist.x, hw.y * height - wrist.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = hand;
+      }
+    }
+    return best;
+  };
+
+  const handSize = shoulderW * 0.22;
+  const drawHand = (wrist: Pt | null, elbow: Pt | null, info: HandInfo | null) => {
+    if (!wrist) {
+      return;
+    }
+    const dx = elbow ? wrist.x - elbow.x : 0;
+    const dy = elbow ? wrist.y - elbow.y : 1;
+    const len = Math.hypot(dx, dy) || 1;
+    const dir = { x: dx / len, y: dy / len }; // forearm → hand direction
+    const cx = wrist.x + dir.x * handSize * 0.5;
+    const cy = wrist.y + dir.y * handSize * 0.5;
+    const closed = info?.closed ?? false;
+
+    ctx.fillStyle = closed ? HAND_GRAB_COLOR : RAGDOLL_COLOR;
+    ctx.beginPath();
+    if (closed) {
+      // Grab: a circle in the grab color.
+      ctx.arc(cx, cy, handSize * 0.8, 0, Math.PI * 2);
+    } else {
+      // Open: an oval elongated along the forearm, in the body color.
+      ctx.ellipse(cx, cy, handSize * 1.1, handSize * 0.6, Math.atan2(dir.y, dir.x), 0, Math.PI * 2);
+    }
+    ctx.fill();
+  };
+
+  drawHand(lw, le, handAt(lw));
+  drawHand(rw, re, handAt(rw));
 
   ctx.restore();
 }
