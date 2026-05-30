@@ -383,6 +383,17 @@ dd {
   max-width: 720px;
 }
 
+.settings-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.settings-controls .primary-action {
+  align-self: flex-start;
+  max-width: 200px;
+}
+
 .range-control {
   padding: 1rem;
 }
