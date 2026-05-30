@@ -65,7 +65,7 @@ pnpm db:push
 - MediaPipe Tasks Vision dependency and a webcam test page
 - p5.js placeholder canvas on the temp game page
 - p2 physics dependency ready for later game logic
-- Temp pages for home, game, poser, saboteur, settings, leaderboard, and score
+- Temp pages for home, game, saboteur, settings, leaderboard, and score
 
 ## Environment
 
@@ -81,5 +81,5 @@ $env:SQLITE_PATH = "data/quackhacks.sqlite"
 
 - The frontend currently has scaffold routes and proof-of-life controls only.
 - The pose test starts a webcam stream and lazy-loads MediaPipe, but it does not run full pose landmark detection yet.
-- The saboteur and poser pages are placeholders for the future realtime pose editor and universal-human display.
+- The saboteur page is a placeholder for the future realtime pose editor.
 - The leaderboard writes to local SQLite through the typed Hono API.

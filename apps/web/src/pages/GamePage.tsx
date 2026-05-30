@@ -57,10 +57,7 @@ export function GamePage() {
         <div className="canvas-stage" ref={canvasMountRef} />
         <aside className="tool-panel">
           <h2>Debug Screens</h2>
-          <Link className="primary-action" to="/poser">
-            Poser Option
-          </Link>
-          <Link className="secondary-action" to="/saboteur">
+          <Link className="primary-action" to="/saboteur">
             Saboteur Option
           </Link>
           <Link className="secondary-action" to="/score">
