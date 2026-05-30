@@ -28,8 +28,9 @@ type AthleteStageProps = {
 };
 
 // The hole keeps a human portrait shape (not stretched to the camera's aspect): a
-// centered "doorway" whose height fills the frame.
+// centered "doorway". HOLE_SCALE is the fraction of the frame height it occupies.
 const HOLE_ASPECT = universalHumanSize.width / universalHumanSize.height;
+const HOLE_SCALE = 0.8;
 
 // Everything OUTSIDE the hole is a semi-transparent tinted wall; the hole itself is
 // punched clear so the live camera shows through it.
@@ -298,14 +299,15 @@ function drawHoleOverlay(
   width: number,
   height: number
 ) {
-  const regionH = height;
-  const regionW = height * HOLE_ASPECT;
+  const regionH = height * HOLE_SCALE;
+  const regionW = regionH * HOLE_ASPECT;
   const x0 = (width - regionW) / 2;
+  const y0 = (height - regionH) / 2;
   const radius = holeRadius(target.difficulty) * regionW;
 
   const jointMap = new Map(target.joints.map((j) => [j.name, j]));
   const px = (jx: number) => x0 + jx * regionW;
-  const py = (jy: number) => jy * regionH;
+  const py = (jy: number) => y0 + jy * regionH;
 
   const strokeLimbs = (context: CanvasRenderingContext2D, lineWidth: number) => {
     context.lineWidth = lineWidth;
