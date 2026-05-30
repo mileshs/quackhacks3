@@ -1,23 +1,5 @@
 The following provides some info about the game we want to make. Use it as context when working on the project.
 
-Ordering 
-At the start of each round / game (poser)
-We scan the body pose / joint length
-We normalize the information to a “universal human”
-Use this information to call some displayHuman() function
-
-Game logic: 
-How much time should we get each round?
-Power ups that you must hit w/hand (hit box/bubble). Redeem on spot.
-Ideas: extra life, slow time
-Lives: 3 per person (best of 1? best of 2)
-Scoring based on % match
-
-Saboteur
-Gets some time to send in some random pose, or to customize it
-
-
-
 ## Stack
 frontend: client: Vite w/ React (typescript)
 CV: MediaPipe pose (JavaScript) 
