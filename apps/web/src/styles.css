@@ -394,6 +394,13 @@ dd {
   max-width: 200px;
 }
 
+.tempo-readout {
+  margin: 0;
+  font-weight: 700;
+  color: #75e2be;
+  font-variant-numeric: tabular-nums;
+}
+
 .range-control {
   padding: 1rem;
 }

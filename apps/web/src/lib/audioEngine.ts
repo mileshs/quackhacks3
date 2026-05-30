@@ -1,0 +1,150 @@
+export const AUDIO_ASSETS = {
+  soundtrackSpeedy: "/assets/soundtrack_speedy.mp3",
+  timeWarp: "/assets/time_warp.mp3",
+} as const;
+
+// --- Soundtrack tempo map (soundtrack_speedy) ---
+// The song starts at 140 BPM and every 16 beats the tempo steps up by 7.5 BPM,
+// for 16 segments total, ending with 16 beats at 252.5 BPM.
+//
+// Because every segment is the same number of beats, the wall-clock length of
+// each segment is proportional to 1 / bpm. That lets us map a playback position
+// to its BPM using only the song's actual duration (the audio element's
+// `.duration`), with no hard-coded beat lengths. To change the tempo curve
+// later, edit these constants only.
+export const SOUNDTRACK_TEMPO = {
+  startBpm: 140,
+  bpmStep: 7.5,
+  segmentCount: 16,
+  beatsPerSegment: 16,
+};
+
+export function getSegmentBpms(): number[] {
+  return Array.from(
+    { length: SOUNDTRACK_TEMPO.segmentCount },
+    (_, i) => SOUNDTRACK_TEMPO.startBpm + SOUNDTRACK_TEMPO.bpmStep * i
+  );
+}
+
+// Relative wall-clock weight of each segment (proportional to 1 / bpm).
+function segmentWeights(): number[] {
+  return getSegmentBpms().map((bpm) => 1 / bpm);
+}
+
+// BPM at a playback position. `totalSeconds` is the song's full duration
+// (pass the audio element's `.duration`); segment boundaries are derived from it.
+export function getBpmAtTime(seconds: number, totalSeconds: number): number {
+  const bpms = getSegmentBpms();
+
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return bpms[0];
+  }
+
+  const weights = segmentWeights();
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+
+  let elapsed = 0;
+  for (let i = 0; i < bpms.length; i += 1) {
+    const segmentSeconds = totalSeconds * (weights[i] / weightSum);
+    if (seconds < elapsed + segmentSeconds) {
+      return bpms[i];
+    }
+    elapsed += segmentSeconds;
+  }
+
+  return bpms[bpms.length - 1];
+}
+
+// Beat counter (0-based, fractional) at a playback position.
+export function getBeatAtTime(seconds: number, totalSeconds: number): number {
+  const bpms = getSegmentBpms();
+
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return 0;
+  }
+
+  const weights = segmentWeights();
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+
+  let elapsed = 0;
+  let beats = 0;
+  for (let i = 0; i < bpms.length; i += 1) {
+    const segmentSeconds = totalSeconds * (weights[i] / weightSum);
+    if (seconds < elapsed + segmentSeconds) {
+      const fraction = (seconds - elapsed) / segmentSeconds;
+      return beats + fraction * SOUNDTRACK_TEMPO.beatsPerSegment;
+    }
+    elapsed += segmentSeconds;
+    beats += SOUNDTRACK_TEMPO.beatsPerSegment;
+  }
+
+  return beats;
+}
+
+// --- Time Warp ---
+// time_warp.mp3 was recorded as `durationBeats` beats at `sfxBaseBpm`. On
+// trigger it is rate-scaled by currentBpm / sfxBaseBpm, so it always lasts
+// `durationBeats` beats at the song's current tempo. The song's slow/pitch-down
+// runs for exactly as long as the (rate-scaled) SFX plays.
+export const TIME_WARP = {
+  durationBeats: 3,
+  sfxBaseBpm: 140,
+  sfxBaseSeconds: 2.638, // measured fallback if the SFX element's duration is unavailable
+  songPlaybackRate: 0.5,
+  preservePitchDuringWarp: false, // false => the song pitches down as it slows
+  preserveSfxPitch: false, // false => the SFX pitches with its speed change
+  sfxVolumeScale: 0.5,
+};
+
+export interface TimeWarpConfig {
+  masterVolume: number; // 0..1
+}
+
+// Triggers the time warp. Returns a cancel fn that restores the song immediately.
+export function startTimeWarp(
+  soundtrack: HTMLAudioElement,
+  sfx: HTMLAudioElement,
+  config: TimeWarpConfig
+): () => void {
+  const currentBpm = getBpmAtTime(soundtrack.currentTime, soundtrack.duration);
+  const sfxRate = currentBpm / TIME_WARP.sfxBaseBpm;
+
+  sfx.playbackRate = sfxRate;
+  setPreservesPitch(sfx, TIME_WARP.preserveSfxPitch);
+  sfx.volume = config.masterVolume * TIME_WARP.sfxVolumeScale;
+  sfx.currentTime = 0;
+  sfx.play().catch((err) => {
+    console.warn("Time warp SFX blocked or failed:", err);
+  });
+
+  // The warp effect lasts exactly as long as the rate-scaled SFX plays.
+  const sfxSeconds =
+    Number.isFinite(sfx.duration) && sfx.duration > 0 ? sfx.duration : TIME_WARP.sfxBaseSeconds;
+  const warpDurationMs = (sfxSeconds / sfxRate) * 1000;
+
+  setPreservesPitch(soundtrack, TIME_WARP.preservePitchDuringWarp);
+  soundtrack.playbackRate = TIME_WARP.songPlaybackRate;
+
+  const restore = () => {
+    soundtrack.playbackRate = 1;
+    setPreservesPitch(soundtrack, true);
+  };
+
+  const timeoutId = window.setTimeout(restore, warpDurationMs);
+
+  return () => {
+    window.clearTimeout(timeoutId);
+    restore();
+  };
+}
+
+// preservesPitch is standard but still prefixed in some engines.
+function setPreservesPitch(track: HTMLAudioElement, value: boolean): void {
+  const el = track as HTMLAudioElement & {
+    mozPreservesPitch?: boolean;
+    webkitPreservesPitch?: boolean;
+  };
+  el.preservesPitch = value;
+  el.mozPreservesPitch = value;
+  el.webkitPreservesPitch = value;
+}
