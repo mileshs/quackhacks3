@@ -14,7 +14,7 @@ Alternatively: use ml5.js (cons: more jank/laggy, pros: less lines of code/easie
 Node.js using node for the server
 PNPM monorepo
 .gitignore
-
+use a local sqlite database for data storage
 
 
 Players
