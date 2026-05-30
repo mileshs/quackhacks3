@@ -8,31 +8,16 @@ export function PoseTestPage() {
   const targetPose = starterPoses[poseIndex] ?? starterPoses[0];
 
   return (
-    <section className="page-grid">
-      <div className="page-heading">
-        <p className="eyebrow">Athlete scaffold</p>
-        <h1>Pose Test</h1>
-      </div>
-
-      <div className="pose-target-bar">
-        <span>
-          Target hole: <strong>{targetPose.name}</strong> ({targetPose.difficulty})
-        </span>
-        <div className="pose-target-buttons">
-          {starterPoses.map((pose, index) => (
-            <button
-              key={pose.id}
-              type="button"
-              className={index === poseIndex ? "primary-action" : "secondary-action"}
-              onClick={() => setPoseIndex(index)}
-            >
-              {pose.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <AthleteStage targetPose={targetPose} />
-    </section>
+    <AthleteStage
+      targetPose={targetPose}
+      poseOptions={starterPoses}
+      selectedPoseId={targetPose.id}
+      onSelectPose={(pose) => {
+        const index = starterPoses.findIndex((option) => option.id === pose.id);
+        if (index >= 0) {
+          setPoseIndex(index);
+        }
+      }}
+    />
   );
 }
