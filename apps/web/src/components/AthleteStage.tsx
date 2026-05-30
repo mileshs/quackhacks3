@@ -11,8 +11,6 @@ import {
   type UniversalPose
 } from "@quackhacks/shared";
 import {
-  DrawingUtils,
-  PoseLandmarker,
   getHandLandmarker,
   getPoseLandmarker,
   startPoseLoop,
@@ -108,14 +106,6 @@ const IDLE_BACKDROP = "#000000";
 const RAGDOLL_COLOR = "#0a84ff";
 // A closed/grabbing hand turns red so the grab reads at a glance.
 const HAND_GRAB_COLOR = "#ff2424";
-
-// MediaPipe pose landmark indices 0–10 are face (nose/eyes/ears/mouth); 11+ is body.
-const FIRST_BODY_LANDMARK = 11;
-
-// Skeleton connections with both endpoints on the body (drops the face mesh lines).
-const BODY_CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS.filter(
-  (c) => c.start >= FIRST_BODY_LANDMARK && c.end >= FIRST_BODY_LANDMARK
-);
 
 function makeOffscreen(): (width: number, height: number) => CanvasRenderingContext2D {
   let canvas: HTMLCanvasElement | null = null;
@@ -231,7 +221,6 @@ export function AthleteStage({
       ]);
 
       const ctx = canvas?.getContext("2d") ?? null;
-      const drawingUtils = ctx ? new DrawingUtils(ctx) : null;
 
       setStatus("Tracking");
       setRunning(true);
@@ -263,15 +252,7 @@ export function AthleteStage({
           }
 
           if (ctx) {
-            drawFrame(
-              ctx,
-              drawingUtils,
-              video,
-              landmarks,
-              handClosed,
-              targetRef.current,
-              showDummyRef.current
-            );
+            drawFrame(ctx, landmarks, handClosed, targetRef.current, showDummyRef.current);
           }
 
           const now = performance.now();
@@ -325,8 +306,15 @@ export function AthleteStage({
         </div>
       )}
 
-      {/* Out-of-frame guidance. */}
-      {running && guidance && <div className="guidance-banner">{guidance}</div>}
+      {/* Out-of-frame guidance: dims the screen and pauses with big instructions. */}
+      {running && guidance && (
+        <div className="guidance-overlay">
+          <span className="guidance-pause-icon" aria-hidden="true">
+            ⏸
+          </span>
+          <span className="guidance-text">{guidance}</span>
+        </div>
+      )}
 
       {/* Sidebar toggle. */}
       <button
@@ -417,11 +405,9 @@ function toggleFullscreen(el: Element | null) {
 
 type HandClosed = { left: boolean; right: boolean };
 
-/** Draw one live frame: mirrored camera + skeleton, the hole, then the dummy on top. */
+/** Draw one live frame: black backdrop, the hole, then the dummy on top. */
 function drawFrame(
   ctx: CanvasRenderingContext2D,
-  drawingUtils: DrawingUtils | null,
-  video: HTMLVideoElement,
   landmarks: PoseFrame["landmarks"],
   handClosed: HandClosed,
   target: UniversalPose,
@@ -429,26 +415,10 @@ function drawFrame(
 ) {
   const { width, height } = ctx.canvas;
 
-  ctx.save();
   ctx.clearRect(0, 0, width, height);
   // Solid black backdrop instead of the live camera, so the hole reads as black.
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, width, height);
-  ctx.translate(width, 0);
-  ctx.scale(-1, 1); // selfie mirror (keeps the skeleton aligned with the dummy)
-
-  if (landmarks && drawingUtils) {
-    // Body only — face mesh (eyes/mouth/ears) lines and dots are dropped.
-    drawingUtils.drawConnectors(landmarks, BODY_CONNECTIONS, {
-      color: "#75e2be",
-      lineWidth: 4
-    });
-    drawingUtils.drawLandmarks(landmarks.slice(FIRST_BODY_LANDMARK), {
-      color: "#ffd65c",
-      radius: 4
-    });
-  }
-  ctx.restore();
 
   // Hole is drawn un-mirrored: the saboteur's screen-left lines up with the player's
   // screen-left in the mirrored camera.
@@ -503,31 +473,38 @@ function drawRagdoll(
   const neckRaw = { x: (rls.x + rrs.x) / 2, y: (rls.y + rrs.y) / 2 };
   const torsoPx = Math.hypot(neckRaw.x - hipCenter.x, neckRaw.y - hipCenter.y) || 1;
   const scale = (region.h * DUMMY_TORSO) / torsoPx;
-  const scaled = (p: Pt): Pt => ({
-    x: hipCenter.x + (p.x - hipCenter.x) * scale,
-    y: hipCenter.y + (p.y - hipCenter.y) * scale
+  // Legs are pulled toward the hips by this factor so the dummy reads with shorter,
+  // stockier legs (feet are re-pinned to the floor afterward, see shiftY).
+  const LEG_SHORTEN = 0.85;
+  const scaleAround = (p: Pt, factor: number): Pt => ({
+    x: hipCenter.x + (p.x - hipCenter.x) * scale * factor,
+    y: hipCenter.y + (p.y - hipCenter.y) * scale * factor
   });
+  const scaled = (p: Pt): Pt => scaleAround(p, 1);
 
   // Keep the player's real horizontal position so the dummy can move left/right
   // (even outside the hole); only the size is normalized, not the side-to-side
-  // location. Pin the lowest foot to the floor line so a foot is always grounded.
+  // location. Pin the lowest (shortened) foot to the floor line so a foot is grounded.
   const shiftX = 0;
   const ankleYs = [raw(27), raw(28)]
     .filter((a): a is Pt => Boolean(a))
-    .map((a) => scaled(a).y);
+    .map((a) => scaleAround(a, LEG_SHORTEN).y);
   const floorPy = region.y0 + region.h * FLOOR_Y;
   const shiftY = ankleYs.length
     ? floorPy - Math.max(...ankleYs)
     : region.y0 + region.h * 0.55 - hipCenter.y;
 
-  const pt = (i: number): Pt | null => {
+  // Generic point (full size). `ptLeg` applies the leg-shorten factor.
+  const ptF = (i: number, factor: number): Pt | null => {
     const p = raw(i);
     if (!p) {
       return null;
     }
-    const s = scaled(p);
+    const s = scaleAround(p, factor);
     return { x: s.x + shiftX, y: s.y + shiftY };
   };
+  const pt = (i: number): Pt | null => ptF(i, 1);
+  const ptLeg = (i: number): Pt | null => ptF(i, LEG_SHORTEN);
 
   const ls = pt(11)!;
   const rs = pt(12)!;
@@ -538,14 +515,35 @@ function drawRagdoll(
   const re = pt(14);
   const lw = pt(15);
   const rw = pt(16);
-  const lk = pt(25);
-  const rk = pt(26);
-  const la = pt(27);
-  const ra = pt(28);
+  const lk = ptLeg(25);
+  const rk = ptLeg(26);
+  const la = ptLeg(27);
+  const ra = ptLeg(28);
   const nose = pt(0);
 
-  const shoulderW = Math.hypot(ls.x - rs.x, ls.y - rs.y) || region.w * 0.3;
-  const neck = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 };
+  // Minimum body width so a side-on view (where the shoulders/hips overlap on screen)
+  // doesn't collapse the dummy into a sliver. Anchored to the constant torso length.
+  const minBodyW = region.h * DUMMY_TORSO * 0.62;
+  // Widen a left/right pair outward to at least `minBodyW` while preserving each
+  // point's vertical position and which side is which.
+  const widen = (a: Pt, b: Pt): [Pt, Pt] => {
+    const cx = (a.x + b.x) / 2;
+    const sep = Math.abs(a.x - b.x);
+    if (sep >= minBodyW) {
+      return [a, b];
+    }
+    const half = minBodyW / 2;
+    const sign = a.x <= b.x ? -1 : 1;
+    return [
+      { x: cx + sign * half, y: a.y },
+      { x: cx - sign * half, y: b.y }
+    ];
+  };
+  const [lsW, rsW] = widen(ls, rs);
+  const [lhW, rhW] = widen(lh, rh);
+
+  const shoulderW = Math.max(Math.hypot(lsW.x - rsW.x, lsW.y - rsW.y), minBodyW);
+  const neck = { x: (lsW.x + rsW.x) / 2, y: (lsW.y + rsW.y) / 2 };
 
   const capsule = (a: Pt | null, b: Pt | null, w: number) => {
     if (!a || !b) {
@@ -568,8 +566,9 @@ function drawRagdoll(
   ctx.strokeStyle = RAGDOLL_COLOR;
 
   // Squared torso: the bottom corners sit directly under the shoulders (vertical
-  // sides) so it reads as a rectangle rather than a tapered trapezoid.
-  const torso = [ls, rs, { x: rs.x, y: rh.y }, { x: ls.x, y: lh.y }];
+  // sides) so it reads as a rectangle rather than a tapered trapezoid. Uses the
+  // widened shoulder/hip points so it stays chunky even when the player turns sideways.
+  const torso = [lsW, rsW, { x: rsW.x, y: rhW.y }, { x: lsW.x, y: lhW.y }];
   ctx.beginPath();
   ctx.moveTo(torso[0].x, torso[0].y);
   for (let i = 1; i < torso.length; i += 1) {
@@ -583,20 +582,21 @@ function drawRagdoll(
   ctx.stroke();
 
   // Rounded shoulder bar fuses the shoulders (and arm roots) into the torso.
-  capsule(ls, rs, shoulderW * 0.34);
+  capsule(lsW, rsW, shoulderW * 0.34);
 
   // Neck links the head to the torso so there's no gap; all parts overlap into one
   // cohesive solid shape (everything is the same opaque color).
   capsule(headC, neck, shoulderW * 0.36);
 
-  // Arms + legs as capsules (thicker so they match the chunky hole outline).
-  capsule(ls, le, shoulderW * 0.34);
+  // Arms + legs as capsules (thicker so they match the chunky hole outline). Arms
+  // root at the widened shoulders, legs at the widened hips.
+  capsule(lsW, le, shoulderW * 0.34);
   capsule(le, lw, shoulderW * 0.3);
-  capsule(rs, re, shoulderW * 0.34);
+  capsule(rsW, re, shoulderW * 0.34);
   capsule(re, rw, shoulderW * 0.3);
-  capsule(lh, lk, shoulderW * 0.42);
+  capsule(lhW, lk, shoulderW * 0.42);
   capsule(lk, la, shoulderW * 0.34);
-  capsule(rh, rk, shoulderW * 0.42);
+  capsule(rhW, rk, shoulderW * 0.42);
   capsule(rk, ra, shoulderW * 0.34);
 
   // Head.
