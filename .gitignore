@@ -3,6 +3,7 @@ dist/
 .turbo/
 .vite/
 coverage/
+.pnpm-store/
 *.tsbuildinfo
 
 .env
