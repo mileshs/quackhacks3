@@ -28,7 +28,7 @@ import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import { useDefeatSequence } from "../lib/defeatSequence";
 import { useSound } from "../providers/SoundProvider";
 import { useDevSection, useSettings } from "../lib/settings";
-import { useGameTempo } from "../lib/tempo";
+import { isHoleVisiblePhase, useGameTempo } from "../lib/tempo";
 import { cx } from "../lib/ui";
 import { SettingsToggle } from "./SettingsToggle";
 
@@ -611,6 +611,9 @@ export function AthleteStage({
   // Brief snapshot flash, and a guard so the count-8 score fires once per cycle.
   const [flash, setFlash] = useState(false);
   const lastSnapshotCycleRef = useRef<number | null>(null);
+  /** Latched at count 5 each cycle; used for hole draw + scoring on beats 5–8. */
+  const visibleHoleRef = useRef<UniversalPose | null>(null);
+  const lastHoleLatchCycleRef = useRef<number | null>(null);
 
   // The dummy is rendered on a separate p5.js WEBGL canvas overlaid on the 2D one. The
   // detect loop publishes the latest pose here and the p5 draw loop reads it.
@@ -765,6 +768,8 @@ export function AthleteStage({
     livesRef.current = STARTING_LIVES;
     defeatedRef.current = false;
     lastLifeLossCycleRef.current = null;
+    visibleHoleRef.current = null;
+    lastHoleLatchCycleRef.current = null;
   }, [playingSessionKey]);
 
   useEffect(() => {
@@ -780,14 +785,18 @@ export function AthleteStage({
     powerupTimerRef.current = window.setTimeout(() => setActivePowerup(null), duration);
   }, [powerupActivation]);
 
+  const getScoringHoleTarget = useCallback(() => {
+    return visibleHoleRef.current ?? targetRef.current;
+  }, []);
+
   const getSnapshotMatchPercent = useCallback(() => {
     const pose = dummyRenderRef.current?.pose;
     if (pose) {
-      return comparePoses(pose, targetRef.current);
+      return comparePoses(pose, getScoringHoleTarget());
     }
 
     return matchPercentRef.current;
-  }, []);
+  }, [getScoringHoleTarget]);
 
   const finishWall = useCallback(() => {
     const judgedMatch = getSnapshotMatchPercent();
@@ -849,6 +858,23 @@ export function AthleteStage({
     stopSoundtrack,
     tempo
   ]);
+
+  // Latch hole at count 5; hide at count 1 of each cycle.
+  useLayoutEffect(() => {
+    if (!tempo) {
+      return;
+    }
+
+    if (tempo.count === 1 && tempo.phase === "rest") {
+      visibleHoleRef.current = null;
+      return;
+    }
+
+    if (tempo.count === 5 && tempo.cycle !== lastHoleLatchCycleRef.current) {
+      lastHoleLatchCycleRef.current = tempo.cycle;
+      visibleHoleRef.current = targetRef.current;
+    }
+  }, [tempo?.count, tempo?.phase, tempo?.cycle]);
 
   // Count 8: judge the frozen dummy pose, drop a life on CRASH, flash — before paint.
   useLayoutEffect(() => {
@@ -1017,20 +1043,27 @@ export function AthleteStage({
 
           // Always retarget onto the hole's bone lengths before positioning. Dev mode only
           // affects UI guidance; it must not change the geometry used for rendering/scoring.
+          const phase = tempoPhaseRef.current;
+          const holeTarget = !phase
+            ? targetRef.current
+            : isHoleVisiblePhase(phase)
+              ? visibleHoleRef.current
+              : null;
+          const scoringTarget = visibleHoleRef.current ?? targetRef.current;
+
           let dummyPose: UniversalPose | null = null;
           let bodyPose: UniversalPose | null = null;
           if (live) {
-            bodyPose = retargetPose(live, targetRef.current);
+            bodyPose = retargetPose(live, scoringTarget);
             dummyPose =
               hipFrameX !== null && ctx
-                ? anchorDummyToPlayer(bodyPose, targetRef.current, hipFrameX, ctx.canvas.width, ctx.canvas.height)
+                ? anchorDummyToPlayer(bodyPose, scoringTarget, hipFrameX, ctx.canvas.width, ctx.canvas.height)
                 : bodyPose;
           }
 
           // Tempo gating: on the "snapshot" beat the dummy + score freeze (hold the last
           // pose-phase frame); scoring only runs during the "pose" beats. No tempo (e.g.
           // standalone/dev) = everything runs normally.
-          const phase = tempoPhaseRef.current;
           const frozen = phase === "snapshot";
           const scoring = !phase || phase === "pose";
 
@@ -1039,7 +1072,7 @@ export function AthleteStage({
             dummyRenderRef.current = dummyPose ? { pose: dummyPose, handClosed } : null;
           }
           if (ctx) {
-            drawFrame(ctx, targetRef.current);
+            drawFrame(ctx, holeTarget);
           }
 
           const now = performance.now();
@@ -1057,7 +1090,7 @@ export function AthleteStage({
                 hipFrameX,
                 bodyPose,
                 dummyPose,
-                targetRef.current
+                scoringTarget
               )
             );
           }
@@ -1066,7 +1099,7 @@ export function AthleteStage({
             lastMatchUpdate.current = now;
             // Score the same positioned body that is rendered: percent of dummy silhouette
             // inside the visible hole, so horizontal drift tanks the meter naturally.
-            const percent = comparePoses(dummyPose, targetRef.current);
+            const percent = comparePoses(dummyPose, scoringTarget);
             setMatchPercent(percent);
             setBand(scoreBandFromMatch(percent));
           }
@@ -1506,13 +1539,17 @@ type DummyRender = { pose: UniversalPose; handClosed: HandClosed };
  * Draw one live frame on the 2D canvas: black backdrop + the carved hole. The blue dummy
  * is rendered separately in 3D on the overlaid p5.js WEBGL canvas.
  */
-function drawFrame(ctx: CanvasRenderingContext2D, target: UniversalPose) {
+function drawFrame(ctx: CanvasRenderingContext2D, target: UniversalPose | null) {
   const { width, height } = ctx.canvas;
 
   ctx.clearRect(0, 0, width, height);
   // Solid black backdrop instead of the live camera, so the hole reads as black.
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, width, height);
+
+  if (!target) {
+    return;
+  }
 
   // Hole is carved from the same blob silhouette the saboteur draws. The live pose is
   // already mirrored to match the selfie view, so no extra canvas mirror is needed.
