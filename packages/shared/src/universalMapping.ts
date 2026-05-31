@@ -168,15 +168,13 @@ export function landmarksToUniversalPose(
     const mapped = toUniversal(source);
     joints.push({
       name: jointName,
-      x: clamp01(mapped.x),
-      y: clamp01(mapped.y),
+      // Keep out-of-frame landmarks outside the universal box. Clamping them to the
+      // edge makes offscreen limbs look falsely valid and can inflate the match score.
+      x: mapped.x,
+      y: mapped.y,
       importance: JOINT_IMPORTANCE[jointName]
     });
   }
 
   return { id, name, difficulty: "standard", joints };
-}
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
 }

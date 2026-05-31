@@ -109,26 +109,36 @@ export function startPoseLoop(
     if (stopped) {
       return;
     }
-    if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
-      lastVideoTime = video.currentTime;
-      const ts = performance.now();
-      const result = poseLandmarker.detectForVideo(video, ts);
+    // A single bad frame (a transient MediaPipe glitch, an off-screen-limb edge case, or a
+    // throw inside onFrame) must never kill the loop — otherwise the dummy/hole freeze in
+    // place forever. Catch per-frame errors and always reschedule in `finally`.
+    try {
+      if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const ts = performance.now();
+        const result = poseLandmarker.detectForVideo(video, ts);
 
-      const hands: HandInfo[] = [];
-      if (handLandmarker) {
-        const handResult = handLandmarker.detectForVideo(video, ts);
-        handResult.landmarks.forEach((landmarks, index) => {
-          hands.push({
-            landmarks,
-            handedness: handResult.handedness[index]?.[0]?.categoryName ?? "Unknown",
-            closed: isHandClosed(landmarks)
+        const hands: HandInfo[] = [];
+        if (handLandmarker) {
+          const handResult = handLandmarker.detectForVideo(video, ts);
+          handResult.landmarks.forEach((landmarks, index) => {
+            hands.push({
+              landmarks,
+              handedness: handResult.handedness[index]?.[0]?.categoryName ?? "Unknown",
+              closed: isHandClosed(landmarks)
+            });
           });
-        });
-      }
+        }
 
-      onFrame({ result, landmarks: result.landmarks[0], hands });
+        onFrame({ result, landmarks: result.landmarks[0], hands });
+      }
+    } catch (err) {
+      console.error("pose loop frame error (continuing)", err);
+    } finally {
+      if (!stopped) {
+        rafId = requestAnimationFrame(tick);
+      }
     }
-    rafId = requestAnimationFrame(tick);
   };
 
   rafId = requestAnimationFrame(tick);

@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useSettings } from "../lib/settings";
 import { useSound } from "../providers/SoundProvider";
 import { cx } from "../lib/ui";
+import { SettingsToggle } from "./SettingsToggle";
 
 // Per-screen accent for the gear button so the persistent Settings control recolors to
 // match each page's theme.
@@ -138,27 +139,12 @@ export function SettingsMenu() {
             </div>
           </section>
 
-          {/* Dev mode toggle */}
-          <section className="flex items-center justify-between rounded-[12px] bg-white px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
-            <span className="text-sm font-extrabold">Dev Mode</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={devMode}
-              onClick={() => setDevMode(!devMode)}
-              className={cx(
-                "relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors",
-                devMode ? "bg-[#2fb86b]" : "bg-[#d8cdb5]"
-              )}
-            >
-              <span
-                className={cx(
-                  "absolute top-0.5 size-6 rounded-full bg-white shadow transition-transform",
-                  devMode ? "translate-x-[1.35rem]" : "translate-x-0.5"
-                )}
-              />
-            </button>
-          </section>
+          <SettingsToggle
+            id="settings-dev-mode"
+            label="Dev Mode"
+            checked={devMode}
+            onCheckedChange={setDevMode}
+          />
 
           {/* Page-specific dev controls */}
           {devMode ? (
