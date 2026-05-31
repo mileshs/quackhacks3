@@ -2,21 +2,38 @@ The following provides some info about the game we want to make. Use it as conte
 
 Assume the dev server alr up.
 
+## Current Cloudflare Architecture
+
+The app deploys as one Cloudflare Worker on `workers.dev`, while keeping separate workspaces to reduce merge conflicts:
+
+- `apps/web`: Vite + React frontend.
+- `apps/server`: Hono Worker API, Durable Object WebSocket coordinator, and Drizzle schema.
+- `packages/shared`: shared pose/game/scoring/API types.
+
+Use Cloudflare-native bindings in Worker code. Import `env` from `cloudflare:workers`; do not thread Worker bindings through custom parameters unless a local test truly requires it.
+
+Realtime state is a single global Durable Object named `GlobalGame`, bound as `GLOBAL_GAME`. There are no rooms and no sync layer. `/ws` should route to `env.GLOBAL_GAME.getByName("global")`.
+
+All SQL must use Drizzle with Cloudflare D1. Schema lives in `apps/server/src/db/schema.ts`; generated SQL migrations live in `apps/server/drizzle`; `wrangler.jsonc` points D1 at that folder through `d1_databases[].migrations_dir`. Do not use `drizzle-kit push` for production or invent a local SQLite/libSQL path. Normal scripts apply migrations automatically:
+
+- `pnpm dev` applies local D1 migrations before local Wrangler dev.
+- `pnpm cf:deploy` applies remote D1 migrations before deploy.
+- `pnpm db:migrate:local` and `pnpm db:migrate:remote` are direct escape hatches.
+
 ## Stack
 frontend: client: Vite w/ React (typescript)
 CV: MediaPipe pose (JavaScript) 
-backend: Node.js w/ hono (ts)
-Socket.io for websockets, also use hono websockets as well and integrate as best as possible
+backend: Cloudflare Workers w/ Hono (ts)
+WebSockets: native Cloudflare WebSockets through Durable Objects
 Use the hono client package for the frontend. DO NOT make a custom wrapper on the frontend, you must use the hono client package for types api routes.
 
 p2.js physics, if needed
 p5.js graphics library and main game logic
 Mediapipe, for the body/pose tracking 
 Alternatively: use ml5.js (cons: more jank/laggy, pros: less lines of code/easier setup)
-Node.js using node for the server
 PNPM monorepo
 .gitignore
-use a local sqlite database for data storage
+use Cloudflare D1 for SQL data storage
 
 
 
