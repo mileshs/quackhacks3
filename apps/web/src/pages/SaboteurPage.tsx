@@ -22,6 +22,7 @@ import { SaboteurSplash } from "../components/SaboteurSplash";
 import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
 import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
+import { SaboteurTutorialOverlay } from "../components/SaboteurTutorialOverlay";
 import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
@@ -194,8 +195,9 @@ function SaveErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
   return (
     <div
       role="alert"
+      data-saboteur-save-error
       className={cx(
-        "pointer-events-none absolute left-5 top-5 z-20 max-w-[min(80%,320px)] rounded-[10px] bg-[#ef5c6b] px-3 py-2 text-sm font-bold text-white shadow-[0_8px_22px_rgba(150,25,40,0.5)] transition-opacity duration-300",
+        "pointer-events-none absolute left-1/2 bottom-[26%] z-20 max-w-[min(92%,320px)] -translate-x-1/2 rounded-[10px] bg-[#ef5c6b] px-3 py-2 text-center text-sm font-bold text-white shadow-[0_8px_22px_rgba(150,25,40,0.5)] transition-opacity duration-300",
         visible ? "opacity-100" : "opacity-0"
       )}
     >
@@ -226,6 +228,7 @@ export function SaboteurPage() {
     }
     return window.localStorage.getItem(SPLASH_SEEN_STORAGE_KEY) !== "true";
   });
+  const [tutorialRun, setTutorialRun] = useState(0);
   const [powerupProgress, setPowerupProgress] = useState<SaboteurPowerupProgress>({
     inventory: [],
     perfectStreak: 0,
@@ -434,10 +437,10 @@ export function SaboteurPage() {
         <div className="flex min-h-0 flex-col gap-3">
           {/* Canvas card: stage + tool buttons along the bottom of the dark viewport. */}
           <div className={cx(saboteurCard, "relative flex min-h-[min(70vh,680px)] flex-1 flex-col overflow-hidden p-3")}>
-            {saveError ? (
-              <SaveErrorToast key={saveErrorNonce} message={saveError} onDismiss={() => setSaveError(null)} />
-            ) : null}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-[#0c0d12] shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)]">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-[#0c0d12] shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)]">
+              {saveError ? (
+                <SaveErrorToast key={saveErrorNonce} message={saveError} onDismiss={() => setSaveError(null)} />
+              ) : null}
               <div className="flex min-h-0 flex-1 items-center justify-center px-2 py-2">
                 {showHole ? (
                   <SaboteurHolePreview pose={displayPose} />
@@ -457,6 +460,7 @@ export function SaboteurPage() {
                 onToggleHole={() => setShowHole((current) => !current)}
                 onSavePose={addPose}
                 onSendPose={sendPose}
+                onStartTutorial={() => setTutorialRun((run) => run + 1)}
               />
             </div>
           </div>
@@ -508,6 +512,7 @@ export function SaboteurPage() {
         </aside>
       </div>
     </section>
+      <SaboteurTutorialOverlay runKey={tutorialRun} />
     </RoleGameShell>
   );
 }
@@ -783,6 +788,10 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
   const [isWriggling, setIsWriggling] = useState(false);
   const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
   const torsoCenter = getTorsoCenter(jointMap);
+  const footGrounded = useMemo(
+    () => hasGroundedFoot(applyPoseConstraints(pose, activeJoint ?? "hips")),
+    [pose, activeJoint]
+  );
 
   useEffect(() => {
     latestPoseRef.current = pose;
@@ -889,6 +898,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
         viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
         role="img"
         aria-label="Editable saboteur pose"
+        data-foot-grounded={footGrounded ? "true" : "false"}
         onPointerMove={moveActiveJoint}
         onPointerUp={stopPointerAction}
         onPointerCancel={stopPointerAction}
@@ -913,6 +923,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
         {pose.joints.map((joint) => (
           <circle
             key={joint.name}
+            data-tutorial-joint={joint.name}
             cx={joint.x * universalHumanSize.width}
             cy={joint.y * universalHumanSize.height}
             r={JOINT_HANDLE_RADIUS}
@@ -965,6 +976,7 @@ function TorsoMoveHandle({
       onPointerDown={onPointerDown}
       className={isWriggling ? "cursor-grabbing" : "cursor-grab"}
       aria-label="Move entire pose"
+      data-tutorial-move-handle
     >
       <circle r={16} className="fill-transparent" />
       <g className={saboteurTorsoHandleIcon}>

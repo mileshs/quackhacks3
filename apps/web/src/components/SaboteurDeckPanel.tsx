@@ -37,7 +37,7 @@ export function SaboteurDeckPanel({ poses, selectedIndex, onSelect, onRandomize 
         </button>
       </div>
 
-      <div className={cx(saboteurSurface, "grid max-h-80 grid-cols-2 gap-2.5 overflow-y-auto p-2.5")}>
+      <div className={cx(saboteurSurface, "saboteur-deck-scroll grid max-h-80 grid-cols-2 gap-2.5 overflow-y-auto p-2.5")} data-saboteur-deck-scroll>
         {poses.map((entry, index) => (
           <DeckCard
             key={entry.id}
