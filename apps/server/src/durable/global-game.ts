@@ -49,6 +49,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
 
     this.ctx.acceptWebSocket(server);
+    await this.advanceCountdownIfElapsed({ broadcast: false });
     await this.broadcastState();
 
     return new Response(null, {
@@ -58,6 +59,8 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
   }
 
   async webSocketMessage(ws: WebSocket, rawMessage: string | ArrayBuffer) {
+    await this.advanceCountdownIfElapsed({ broadcast: true });
+
     if (typeof rawMessage !== "string") {
       this.sendError(ws, "Only JSON text messages are supported.");
       return;
@@ -128,7 +131,8 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
 
   async webSocketClose(ws: WebSocket) {
     if (this.getSocketRole(ws)) {
-      await this.endGame("role-disconnected");
+      ws.serializeAttachment({});
+      await this.endGameIfRoleWasPlaying("role-disconnected");
       return;
     }
 
@@ -137,15 +141,17 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
 
   async webSocketError(ws: WebSocket) {
     if (this.getSocketRole(ws)) {
-      await this.endGame("role-disconnected");
+      ws.serializeAttachment({});
+      await this.endGameIfRoleWasPlaying("role-disconnected");
       return;
     }
 
+    await this.scheduleNextAlarm();
     await this.broadcastState();
   }
 
   async alarm() {
-    await this.endIfRoleTimedOut();
+    await this.runScheduledTasks();
   }
 
   private async startGame() {
@@ -183,6 +189,28 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
     });
   }
 
+  private async endGameIfRoleWasPlaying(reason: Extract<StoredGameState["endReason"], "role-disconnected" | "role-timeout">) {
+    const state = await this.loadStoredState();
+
+    if (state.phase === "playing") {
+      await this.endGame(reason);
+      return;
+    }
+
+    if (state.phase === "countdown") {
+      await this.saveStoredState({
+        ...state,
+        phase: "waiting",
+        countdownStartedAt: null,
+        updatedAt: new Date().toISOString()
+      });
+      return;
+    }
+
+    await this.scheduleNextAlarm(state);
+    await this.broadcastState();
+  }
+
   private async devStartGame() {
     const state = await this.loadStoredState();
 
@@ -215,7 +243,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
 
     ws.serializeAttachment({ role, lastSeenAt: now, ready: false } satisfies RoleSocketAttachment);
     this.send(ws, { type: "role:accepted", role });
-    await this.scheduleHeartbeatSweep();
+    await this.scheduleNextAlarm(state);
     await this.broadcastState();
   }
 
@@ -230,7 +258,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
 
     const attachment = this.getSocketAttachment(ws);
     ws.serializeAttachment({ ...attachment, role, lastSeenAt: new Date().toISOString() } satisfies RoleSocketAttachment);
-    await this.scheduleHeartbeatSweep();
+    await this.scheduleNextAlarm(state);
     await this.broadcastState();
   }
 
@@ -266,6 +294,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       return;
     }
 
+    await this.scheduleNextAlarm(state);
     await this.broadcastState();
   }
 
@@ -287,6 +316,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
   private async saveStoredState(state: StoredGameState) {
     this.cachedState = state;
     await this.ctx.storage.put(GAME_STATE_KEY, state);
+    await this.scheduleNextAlarm(state);
     await this.broadcastState();
   }
 
@@ -362,28 +392,46 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
     return (ws.deserializeAttachment() ?? {}) as RoleSocketAttachment;
   }
 
-  private async endIfRoleTimedOut() {
+  private async advanceCountdownIfElapsed({ broadcast }: { broadcast: boolean }) {
     const state = await this.loadStoredState();
 
+    if (!state.activeGame || state.phase !== "countdown" || !state.countdownStartedAt) {
+      return { state, advanced: false };
+    }
+
+    const countdownElapsed = Date.now() - Date.parse(state.countdownStartedAt);
+
+    if (countdownElapsed < COUNTDOWN_MS) {
+      return { state, advanced: false };
+    }
+
+    const nextState = {
+      ...state,
+      phase: "playing",
+      countdownStartedAt: null,
+      updatedAt: new Date().toISOString()
+    } satisfies StoredGameState;
+
+    this.cachedState = nextState;
+    await this.ctx.storage.put(GAME_STATE_KEY, nextState);
+    await this.scheduleNextAlarm(nextState);
+
+    if (broadcast) {
+      await this.broadcastState();
+    }
+
+    return { state: nextState, advanced: true };
+  }
+
+  private async runScheduledTasks() {
+    const { state } = await this.advanceCountdownIfElapsed({ broadcast: true });
+
     if (!state.activeGame) {
+      await this.scheduleNextAlarm(state);
       return;
     }
 
     const now = Date.now();
-
-    if (state.phase === "countdown" && state.countdownStartedAt) {
-      const countdownElapsed = now - Date.parse(state.countdownStartedAt);
-
-      if (countdownElapsed >= COUNTDOWN_MS) {
-        await this.saveStoredState({
-          ...state,
-          phase: "playing",
-          countdownStartedAt: null,
-          updatedAt: new Date().toISOString()
-        });
-        return;
-      }
-    }
 
     const claimedRoles = Object.values(this.buildRoles()).filter((role) => role.status === "occupied");
     const hasTimedOutRole = claimedRoles.some((role) => {
@@ -395,17 +443,55 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
     });
 
     if (hasTimedOutRole) {
-      await this.endGame("role-timeout");
+      await this.clearTimedOutRoles();
+      await this.endGameIfRoleWasPlaying("role-timeout");
       return;
     }
 
-    if (claimedRoles.length > 0 || state.phase === "countdown") {
-      await this.scheduleHeartbeatSweep();
-    }
+    await this.scheduleNextAlarm(state);
   }
 
-  private async scheduleHeartbeatSweep() {
-    await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_SWEEP_MS);
+  private async scheduleNextAlarm(state = this.cachedState) {
+    const currentState = state ?? (await this.loadStoredState());
+
+    if (!currentState.activeGame) {
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+
+    const deadlines: number[] = [];
+
+    if (currentState.phase === "countdown" && currentState.countdownStartedAt) {
+      deadlines.push(Date.parse(currentState.countdownStartedAt) + COUNTDOWN_MS);
+    }
+
+    const hasClaimedRole = Object.values(this.buildRoles()).some((role) => role.status === "occupied");
+    if (hasClaimedRole) {
+      deadlines.push(Date.now() + HEARTBEAT_SWEEP_MS);
+    }
+
+    if (deadlines.length === 0) {
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+
+    await this.ctx.storage.setAlarm(Math.max(Date.now(), Math.min(...deadlines)));
+  }
+
+  private async clearTimedOutRoles() {
+    const now = Date.now();
+
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = this.getSocketAttachment(socket);
+
+      if (!attachment.role || !attachment.lastSeenAt) {
+        continue;
+      }
+
+      if (now - Date.parse(attachment.lastSeenAt) > HEARTBEAT_TIMEOUT_MS) {
+        socket.serializeAttachment({});
+      }
+    }
   }
 
   private allRolesReady() {
@@ -428,7 +514,6 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       countdownStartedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
-    await this.ctx.storage.setAlarm(Date.now() + COUNTDOWN_MS);
   }
 }
 

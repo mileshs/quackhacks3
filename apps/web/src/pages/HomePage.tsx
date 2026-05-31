@@ -3,7 +3,7 @@ import "@fontsource/nunito/900.css";
 import { useEffect } from "react";
 import { GameRole } from "@quackhacks/shared";
 import { Link, useNavigate } from "react-router-dom";
-import { flushQueuedGameNotice, showGameNotice } from "../lib/gameNotifications";
+import { flushQueuedGameNotice } from "../lib/gameNotifications";
 import { cx } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
 
@@ -14,7 +14,7 @@ const secondaryMenuItems: Array<{ to: string; label: string; icon: HomeIcon; ton
 ];
 
 const menuButtonBase =
-  "relative grid min-h-[clamp(4rem,7.25svh,4.85rem)] grid-cols-[5.5rem_minmax(0,1fr)] items-center rounded-[1.45rem] px-8 py-2 pl-4 text-center text-[clamp(1.22rem,1.48vw,1.62rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 [&>span:last-child]:justify-self-center [&>span:last-child]:whitespace-nowrap min-[1181px]:grid-cols-[6.2rem_minmax(0,1fr)] min-[1181px]:rounded-[1.62rem] min-[1181px]:text-[clamp(1.34rem,1.56vw,1.72rem)]";
+  "relative grid min-h-[4.85rem] grid-cols-[5.85rem_minmax(0,1fr)] items-center rounded-[1.55rem] px-7 py-2 pl-2 text-left text-[clamp(1.22rem,1.55vw,1.62rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 [&>span:last-child]:justify-self-start [&>span:last-child]:whitespace-nowrap min-[1181px]:grid-cols-[6.8rem_minmax(0,1fr)] min-[1181px]:rounded-[1.72rem] min-[1181px]:text-[clamp(1.32rem,1.68vw,1.64rem)]";
 
 const menuButtonTone = {
   primary:
@@ -27,12 +27,12 @@ const menuButtonTone = {
 
 function MenuIcon({ icon }: { icon: HomeIcon }) {
   if (icon === "pose") {
-    return <img className="block size-14 object-contain" src="/new-game-icon.png" alt="" aria-hidden="true" />;
+    return <img className="block size-[3.25rem] object-contain" src="/new-game-icon.png" alt="" aria-hidden="true" />;
   }
 
   if (icon === "stop") {
     return (
-      <svg className="size-12 overflow-visible" viewBox="0 0 64 64" aria-hidden="true">
+      <svg className="size-[2.8rem] overflow-visible" viewBox="0 0 64 64" aria-hidden="true">
         <path
           fill="#fff6ec"
           d="M22 8h20l14 14v20L42 56H22L8 42V22L22 8Zm2.6 12.2a4.4 4.4 0 0 0-4.4 4.4v14.8a4.4 4.4 0 0 0 4.4 4.4h14.8a4.4 4.4 0 0 0 4.4-4.4V24.6a4.4 4.4 0 0 0-4.4-4.4H24.6Z"
@@ -43,7 +43,7 @@ function MenuIcon({ icon }: { icon: HomeIcon }) {
   }
 
   return (
-    <svg className="size-12 overflow-visible" viewBox="0 0 64 64" aria-hidden="true">
+    <svg className="size-[2.8rem] overflow-visible" viewBox="0 0 64 64" aria-hidden="true">
       <defs>
         <linearGradient id="gear-fill" x1="0" x2="0" y1="6" y2="58" gradientUnits="userSpaceOnUse">
           <stop stopColor="#ff9d27" />
@@ -99,12 +99,6 @@ export function HomePage() {
     flushQueuedGameNotice();
   }, []);
 
-  useEffect(() => {
-    if (!game?.activeGame && (game?.endReason === "role-disconnected" || game?.endReason === "role-timeout")) {
-      showGameNotice("A player disconnected, so the game ended.");
-    }
-  }, [game?.activeGame, game?.endedAt, game?.endReason]);
-
   function joinRole(role: GameRole) {
     if (role === GameRole.Saboteur && !isSaboteurTaken) {
       navigate("/saboteur");
@@ -121,23 +115,23 @@ export function HomePage() {
 
   return (
     <section
-      className="fixed inset-0 z-20 flex min-h-svh items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_23%,rgba(255,248,190,0.42)_0_8.5rem,rgba(255,248,190,0)_25rem),radial-gradient(circle_at_98%_-10%,rgba(255,248,210,0.3)_0_16rem,rgba(255,248,210,0)_16.08rem),linear-gradient(145deg,#ffe066_0%,#ffd13c_43%,#ffc127_100%)] px-4 py-[clamp(1rem,3svh,2.5rem)] font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] text-[#28303d] before:absolute before:inset-0 before:bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0_1px,transparent_1.45px),linear-gradient(105deg,rgba(255,247,171,0.22),transparent_42%)] before:bg-[length:17px_17px,100%_100%] before:opacity-[0.48]"
+      className="fixed inset-0 z-20 grid min-h-svh items-start justify-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_23%,rgba(255,248,190,0.42)_0_8.5rem,rgba(255,248,190,0)_25rem),radial-gradient(circle_at_98%_-10%,rgba(255,248,210,0.3)_0_16rem,rgba(255,248,210,0)_16.08rem),linear-gradient(145deg,#ffe066_0%,#ffd13c_43%,#ffc127_100%)] px-4 font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] text-[#28303d] before:absolute before:inset-0 before:bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0_1px,transparent_1.45px),linear-gradient(105deg,rgba(255,247,171,0.22),transparent_42%)] before:bg-[length:17px_17px,100%_100%] before:opacity-[0.48]"
       aria-labelledby="home-title"
     >
       <HomeDecor />
-      <div className="relative z-[2] flex max-h-full w-[min(38vw,560px)] min-w-[430px] flex-col items-center justify-center gap-[clamp(1rem,3.2svh,1.9rem)] max-[470px]:min-w-0 max-[470px]:w-full">
+      <div className="relative z-[2] mt-[clamp(4.6rem,10.8vh,6.6rem)] grid w-[min(31vw,500px)] min-w-[370px] justify-items-center max-[430px]:min-w-[calc(100vw-2rem)]">
         <h1 id="home-title" className="sr-only">
           Poses for Dummies
         </h1>
         <img
-          className="block w-[clamp(390px,28.7vw,485px)] max-w-full drop-shadow-[0_16px_13px_rgba(143,101,11,0.24)]"
+          className="block w-[clamp(360px,27vw,455px)] max-w-full drop-shadow-[0_16px_13px_rgba(143,101,11,0.24)]"
           src="/poses-for-dummies-logo-ai.png"
           alt="Poses for Dummies"
         />
-        <nav className="flex w-[clamp(430px,30vw,500px)] max-w-full flex-col gap-[clamp(0.7rem,1.8svh,1.35rem)]" aria-label="Home">
+        <nav className="mt-[clamp(1.15rem,2.7vh,1.65rem)] grid w-[clamp(370px,24.2vw,406px)] max-w-full gap-[clamp(1.15rem,2.6vh,1.55rem)]" aria-label="Home">
           {!isGameActive ? (
             <button className={cx(menuButtonBase, menuButtonTone.primary)} type="button" onClick={createGame}>
-              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+              <span className="grid size-[3.45rem] place-items-center justify-self-center drop-shadow-sm">
                 <MenuIcon icon="pose" />
               </span>
               <span>New Game</span>
@@ -150,10 +144,10 @@ export function HomePage() {
               onClick={() => joinRole(GameRole.Saboteur)}
               disabled={isSaboteurTaken}
             >
-              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+              <span className="grid size-[3.45rem] place-items-center justify-self-center drop-shadow-sm">
                 <MenuIcon icon="pose" />
               </span>
-              <span>{isSaboteurTaken ? "Saboteur Taken" : "Join as Saboteur"}</span>
+              <span>{isSaboteurTaken ? "Saboteur Taken" : "Saboteur"}</span>
             </button>
           ) : null}
           {isGameActive ? (
@@ -163,15 +157,15 @@ export function HomePage() {
               onClick={() => joinRole(GameRole.Dummy)}
               disabled={isDummyTaken}
             >
-              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+              <span className="grid size-[3.45rem] place-items-center justify-self-center drop-shadow-sm">
                 <MenuIcon icon="pose" />
               </span>
-              <span>{isDummyTaken ? "Dummy Taken" : "Join as Dummy"}</span>
+              <span>{isDummyTaken ? "Dummy Taken" : "Dummy"}</span>
             </button>
           ) : null}
           {isGameActive && isGameFull ? (
             <button className={cx(menuButtonBase, menuButtonTone.light, "cursor-not-allowed opacity-70")} type="button" disabled>
-              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+              <span className="grid size-[3.45rem] place-items-center justify-self-center drop-shadow-sm">
                 <MenuIcon icon="stop" />
               </span>
               <span>Game Full</span>
@@ -179,7 +173,7 @@ export function HomePage() {
           ) : null}
           {isGameActive ? (
             <button className={cx(menuButtonBase, menuButtonTone.danger)} type="button" onClick={endGame}>
-              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+              <span className="grid size-[3.45rem] place-items-center justify-self-center drop-shadow-sm">
                 <MenuIcon icon="stop" />
               </span>
               <span>End Game</span>
@@ -187,7 +181,7 @@ export function HomePage() {
           ) : null}
           {secondaryMenuItems.map((item) => (
             <Link key={item.to} className={cx(menuButtonBase, menuButtonTone[item.tone])} to={item.to}>
-              <span className="grid size-[3.75rem] place-items-center justify-self-center text-[#ff8217]">
+              <span className="grid size-[3.45rem] place-items-center justify-self-center text-[#ff8217]">
                 <MenuIcon icon={item.icon} />
               </span>
               <span>{item.label}</span>
