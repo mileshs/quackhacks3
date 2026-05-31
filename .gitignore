@@ -26,3 +26,5 @@ Thumbs.db
 
 # Local hackathon click runner with auth material.
 whatever.ts
+duck-counter*.log
+duck-counter*.pid

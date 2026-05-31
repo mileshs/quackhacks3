@@ -1,6 +1,6 @@
 The following provides some info about the game we want to make. Use it as context when working on the project.
 
-Assume dev server alr running
+Assume the dev server alr up.
 
 ## Stack
 frontend: client: Vite w/ React (typescript)
