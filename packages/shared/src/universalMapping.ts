@@ -105,8 +105,17 @@ export function landmarksToUniversalPose(
   }
 
   const sp = (lm: Landmark) => squarePoint(lm, aspect);
-  const neck = midpoint(sp(lShoulder), sp(rShoulder));
+  const shoulderMid = midpoint(sp(lShoulder), sp(rShoulder));
   const hips = midpoint(sp(lHip), sp(rHip));
+  // MediaPipe has no neck landmark. The universal-human convention places the neck a bit
+  // ABOVE the shoulder line, so synthesize it by lifting the shoulder midpoint along the
+  // torso axis (away from the hips). This keeps the live shoulders sitting just below the
+  // neck — matching the pose-hole outlines — instead of level with it.
+  const NECK_RISE = 0.1;
+  const neck = {
+    x: shoulderMid.x + (shoulderMid.x - hips.x) * NECK_RISE,
+    y: shoulderMid.y + (shoulderMid.y - hips.y) * NECK_RISE
+  };
   const torso = distance(neck, hips);
 
   if (torso < 1e-4) {
