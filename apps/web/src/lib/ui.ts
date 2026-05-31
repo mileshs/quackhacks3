@@ -119,7 +119,7 @@ export const saboteurSurface =
   "rounded-[12px] bg-[#252830] shadow-[inset_0_1px_3px_rgba(0,0,0,0.35)]";
 
 export const saboteurLabel =
-  "block text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#8b919c]";
+  "block text-xs font-extrabold tracking-normal text-[#8b919c]";
 
 export const saboteurPillSecondary = cx(
   pillBase,

@@ -33,40 +33,60 @@ const JOINT_HANDLE_RADIUS = 10;
 const GROUND_Y = 0.94;
 const MIN_DRAG_RADIUS = 0.025;
 const MAX_LEG_SPREAD_DEGREES = 120;
-// Wide play-area bounds (normalized). X is generous so the figure can roam
-// across the landscape stage; the top is pulled above the head so the bounding
-// box fully encloses the figure (head included).
+// Wide play-area bounds (normalized) for the JOINTS. X is generous so the figure can
+// roam across the landscape stage. The ankles (the lowest joints) clamp to GROUND_Y;
+// the blob's feet are drawn a little below the ankle, so the foot SOLE — not the joint —
+// is what rests on the floor line and it can never poke through it.
 const POSE_MIN_X = -0.7;
 const POSE_MAX_X = 1.7;
 const POSE_MIN_Y = -0.08;
 const POSE_MAX_Y = GROUND_Y;
 
+const W = universalHumanSize.width;
+const H = universalHumanSize.height;
+
+// How far the blob figure overflows its joints (universal-box pixels): the head ellipse
+// rises above the head joint, the feet drop below the ankles, and wrist/limb caps stick
+// out sideways. We reserve room for these when fitting the figure into the stage so the
+// head never clips at the top and the feet land exactly on the floor line.
+const FIGURE_HEAD_RISE = 66;
+const FIGURE_FOOT_DROP = 16;
+const FIGURE_SIDE_MARGIN = 18;
+
 // Landscape stage in SVG user units. The element keeps this aspect ratio so it
 // fills the wide stage column without letterboxing.
 const STAGE_WIDTH = 800;
 const STAGE_HEIGHT = 480;
-const STAGE_INSET = 28;
+const STAGE_INSET = 16;
 
-// Fit the bounding box into the stage with a uniform scale, then center it.
-const boundsWidthPx = (POSE_MAX_X - POSE_MIN_X) * universalHumanSize.width;
-const boundsHeightPx = (POSE_MAX_Y - POSE_MIN_Y) * universalHumanSize.height;
+// The floor line sits at the bottom of the feet (ankle ground level + foot drop) so a
+// grounded foot rests on it; because ankles clamp at GROUND_Y, the sole can't cross it.
+const FLOOR_PX = GROUND_Y * H + FIGURE_FOOT_DROP;
+
+// Fit the FULL visual extent of the figure (joints + the overflow around them) into the
+// stage with a uniform scale, then center it — so the head and feet always stay in frame.
+const contentMinX = POSE_MIN_X * W - FIGURE_SIDE_MARGIN;
+const contentMaxX = POSE_MAX_X * W + FIGURE_SIDE_MARGIN;
+const contentMinY = POSE_MIN_Y * H - FIGURE_HEAD_RISE;
+const contentMaxY = FLOOR_PX;
+const contentWidthPx = contentMaxX - contentMinX;
+const contentHeightPx = contentMaxY - contentMinY;
 const dummyScale = Math.min(
-  (STAGE_WIDTH - STAGE_INSET * 2) / boundsWidthPx,
-  (STAGE_HEIGHT - STAGE_INSET * 2) / boundsHeightPx
+  (STAGE_WIDTH - STAGE_INSET * 2) / contentWidthPx,
+  (STAGE_HEIGHT - STAGE_INSET * 2) / contentHeightPx
 );
-const boxScreenWidth = boundsWidthPx * dummyScale;
-const boxScreenHeight = boundsHeightPx * dummyScale;
-const dummyTranslateX = (STAGE_WIDTH - boxScreenWidth) / 2 - POSE_MIN_X * universalHumanSize.width * dummyScale;
-const dummyTranslateY = (STAGE_HEIGHT - boxScreenHeight) / 2 - POSE_MIN_Y * universalHumanSize.height * dummyScale;
+const dummyTranslateX = (STAGE_WIDTH - contentWidthPx * dummyScale) / 2 - contentMinX * dummyScale;
+const dummyTranslateY = (STAGE_HEIGHT - contentHeightPx * dummyScale) / 2 - contentMinY * dummyScale;
 const dummyTransform = `translate(${dummyTranslateX} ${dummyTranslateY}) scale(${dummyScale})`;
 
 const stageBounds = {
-  x: POSE_MIN_X * universalHumanSize.width,
-  y: POSE_MIN_Y * universalHumanSize.height,
-  width: (POSE_MAX_X - POSE_MIN_X) * universalHumanSize.width,
-  height: (POSE_MAX_Y - POSE_MIN_Y) * universalHumanSize.height
+  x: POSE_MIN_X * W,
+  y: POSE_MIN_Y * H,
+  width: (POSE_MAX_X - POSE_MIN_X) * W,
+  // Extend the dashed box down to the floor line so the feet rest on its bottom edge.
+  height: FLOOR_PX - POSE_MIN_Y * H
 };
-const stageFloorY = GROUND_Y * universalHumanSize.height;
+const stageFloorY = FLOOR_PX;
 const jointParents = {
   head: "neck",
   neck: "hips",
@@ -447,7 +467,7 @@ export function SaboteurPage() {
             type="button"
             className={cx(
               devMode ? pillDanger : saboteurPillSecondary,
-              "w-full px-4 py-2.5 text-[13px] uppercase tracking-[0.08em]"
+              "w-full px-4 py-2.5 text-[13px]"
             )}
             aria-pressed={devMode}
             onClick={() => setDevMode((on) => !on)}

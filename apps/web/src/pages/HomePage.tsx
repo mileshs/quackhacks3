@@ -12,7 +12,7 @@ const menuItems: Array<{ to: string; label: string; icon: HomeIcon; tone: "prima
 ];
 
 const menuButtonBase =
-  "relative grid min-h-[4.85rem] grid-cols-[6.5rem_1fr] items-center rounded-[1.55rem] px-7 py-2 pl-3 text-[clamp(1.34rem,1.7vw,1.8rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 min-[1181px]:grid-cols-[7.45rem_1fr] min-[1181px]:rounded-[1.72rem] min-[1181px]:text-[clamp(1.45rem,1.84vw,1.8rem)]";
+  "relative grid min-h-[4.85rem] grid-cols-[6.5rem_1fr] items-center rounded-[1.55rem] px-7 py-2 pl-3 text-[clamp(1.34rem,1.7vw,1.8rem)] leading-none font-black tracking-normal no-underline transition duration-200 hover:brightness-95 active:translate-y-1 min-[1181px]:grid-cols-[7.45rem_1fr] min-[1181px]:rounded-[1.72rem] min-[1181px]:text-[clamp(1.45rem,1.84vw,1.8rem)]";
 
 const menuButtonTone = {
   primary:
@@ -102,7 +102,7 @@ export function HomePage() {
         </h1>
         <img
           className="block w-[clamp(390px,28.7vw,485px)] max-w-full drop-shadow-[0_16px_13px_rgba(143,101,11,0.24)]"
-          src="/poses-for-dummies-logo.png"
+          src="/poses-for-dummies-logo-ai.png"
           alt="Poses for Dummies"
         />
         <nav className="mt-[clamp(1.15rem,2.7vh,1.65rem)] grid w-[clamp(370px,24.2vw,406px)] max-w-full gap-[clamp(1.15rem,2.6vh,1.55rem)]" aria-label="Home">
