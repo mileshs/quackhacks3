@@ -1,6 +1,6 @@
 import type { ScoreBand } from "./scoring.js";
 
-export type SaboteurPowerupKind = "blindness" | "mirror";
+export type SaboteurPowerupKind = "mirror";
 
 export type SaboteurPowerupDefinition = {
   kind: SaboteurPowerupKind;
@@ -9,11 +9,6 @@ export type SaboteurPowerupDefinition = {
 };
 
 export const SABOTEUR_POWERUP_DEFINITIONS: Record<SaboteurPowerupKind, SaboteurPowerupDefinition> = {
-  blindness: {
-    kind: "blindness",
-    name: "Blindness",
-    description: "Black out the poser's view except for a small spotlight on their body."
-  },
   mirror: {
     kind: "mirror",
     name: "Mirror Mode",
@@ -50,7 +45,7 @@ export type SaboteurPowerupProgress = {
 };
 
 export function pickRandomSaboteurPowerup(): SaboteurPowerupKind {
-  const kinds: SaboteurPowerupKind[] = ["blindness", "mirror"];
+  const kinds: SaboteurPowerupKind[] = ["mirror"];
   return kinds[Math.floor(Math.random() * kinds.length)]!;
 }
 

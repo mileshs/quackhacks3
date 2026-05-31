@@ -112,7 +112,6 @@ type AthleteStageProps = {
 const STARTING_LIVES = 3;
 
 const POWERUP_SFX = {
-  blindness: "blindness",
   mirror: "mirror"
 } as const satisfies Record<SaboteurPowerupKind, SoundEffectId>;
 
@@ -652,11 +651,9 @@ export function AthleteStage({
   const { devMode } = useSettings();
   const { invincibleMode } = useEffectiveDevGameplay();
   const lastHandUpdate = useRef(0);
-  const lastSpotlightUpdate = useRef(0);
   const lastDebugUpdate = useRef(0);
   const powerupTimerRef = useRef<number | null>(null);
   const [activePowerup, setActivePowerup] = useState<SaboteurPowerupKind | null>(null);
-  const [spotlightPct, setSpotlightPct] = useState({ x: 50, y: 55 });
   const matchPercentRef = useRef(0);
   const runningRef = useRef(false);
   const bandRef = useRef<ScoreBand>("CRASH");
@@ -1109,13 +1106,6 @@ export function AthleteStage({
             setBand(scoreBandFromMatch(percent));
           }
 
-          if (activePowerupRef.current === "blindness" && lHip && rHip && now - lastSpotlightUpdate.current > 50) {
-            lastSpotlightUpdate.current = now;
-            setSpotlightPct({
-              x: (1 - (lHip.x + rHip.x) / 2) * 100,
-              y: ((lHip.y + rHip.y) / 2) * 100
-            });
-          }
         },
         handLandmarker
       );
@@ -1222,15 +1212,6 @@ export function AthleteStage({
       </div>
 
       {debugDashboardVisible ? <PoseDebugPanel info={debugInfo} /> : null}
-
-      {activePowerup === "blindness" ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-45"
-          style={{
-            background: `radial-gradient(circle 130px at ${spotlightPct.x}% ${spotlightPct.y}%, transparent 0%, transparent 42%, rgba(0,0,0,0.88) 62%, #000 100%)`
-          }}
-        />
-      ) : null}
 
       {activePowerup === "mirror" ? (
         <div className="absolute top-6 left-1/2 z-46 -translate-x-1/2 rounded-full border border-[#64b4ff]/50 bg-[#64b4ff]/20 px-3 py-1 text-xs font-extrabold tracking-widest text-white uppercase">

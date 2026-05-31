@@ -7,7 +7,6 @@ export const SOUNDTRACK_ASSETS = {
 } as const;
 
 export const SOUND_EFFECT_ASSETS = {
-  blindness: "/assets/blindness.mp3",
   boo: "/assets/boo.mp3",
   bruh: "/assets/bruh.mp3",
   buttonClick: "/assets/button_click.mp3",
@@ -41,7 +40,6 @@ export const LOOPING_SOUNDTRACK_IDS = new Set<SoundtrackId>(["mainMenu"]);
 
 /** Shared game moments — dummy / projector client only. */
 export const DUMMY_AUDIENCE_SOUND_EFFECTS = new Set<SoundEffectId>([
-  "blindness",
   "boo",
   "bruh",
   "cheer",

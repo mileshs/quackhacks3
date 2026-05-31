@@ -141,19 +141,8 @@ function ProgressTrack({
   );
 }
 
-export function PowerupIcon({ kind, compact = false }: { kind: SaboteurPowerupKind; compact?: boolean }) {
+export function PowerupIcon({ compact = false }: { kind?: SaboteurPowerupKind; compact?: boolean }) {
   const size = compact ? 22 : 28;
-
-  if (kind === "blindness") {
-    return (
-      <svg className="shrink-0 text-[#ef5c6b]" viewBox="0 0 32 32" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-        <ellipse cx="16" cy="16" rx="12" ry="8" />
-        <circle cx="16" cy="16" r="3" fill="currentColor" stroke="none" />
-        <path d="M6 6l20 20" strokeLinecap="round" />
-      </svg>
-    );
-  }
-
   return <MirrorMaskIcon size={size} />;
 }
 

@@ -641,7 +641,7 @@ function isPowerupActivatePayload(payload: unknown): payload is PowerupActivateP
 
   const candidate = payload as Partial<PowerupActivatePayload>;
   return (
-    (candidate.kind === "blindness" || candidate.kind === "mirror") &&
+    candidate.kind === "mirror" &&
     (candidate.durationMs === undefined || typeof candidate.durationMs === "number") &&
     typeof candidate.sentAt === "string"
   );

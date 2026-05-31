@@ -140,7 +140,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "sabotages",
     title: "Sabotage Tools",
-    body: "You'll earn sabotages to mess with the athlete — blindness, mirror mode, and more. Check this panel during play; full details are in the docs later.",
+    body: "You'll earn sabotages to mess with the athlete — mirror mode and more. Check this panel during play; full details are in the docs later.",
     waitingHint: "Read up, then start sabotaging",
     resolveTarget: () => findPanelByHeading("Sabotage Tools"),
     callout: "left",
