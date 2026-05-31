@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ActiveGameState, GameClientMessage, UniversalPose } from "@quackhacks/shared";
+import { type ActiveGameState, type GameClientMessage, type GameRole, type UniversalPose } from "@quackhacks/shared";
 import { createGameWebSocket, parseGameSocketMessage, sendGameSocketMessage } from "./realtime";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "unavailable";
@@ -7,6 +7,8 @@ type ConnectionStatus = "connecting" | "connected" | "disconnected" | "unavailab
 export function useActiveGame() {
   const [game, setGame] = useState<ActiveGameState | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
+  const [claimedRole, setClaimedRole] = useState<GameRole | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const pendingMessagesRef = useRef<GameClientMessage[]>([]);
 
@@ -37,14 +39,26 @@ export function useActiveGame() {
       if (message?.type === "game:state") {
         setGame(message.state);
       }
+
+      if (message?.type === "role:accepted") {
+        setClaimedRole(message.role);
+        setRoleError(null);
+      }
+
+      if (message?.type === "role:rejected") {
+        setClaimedRole(null);
+        setRoleError(message.reason);
+      }
     });
 
     socket.addEventListener("close", () => {
       setConnectionStatus("disconnected");
+      setClaimedRole(null);
     });
 
     socket.addEventListener("error", () => {
       setConnectionStatus("unavailable");
+      setClaimedRole(null);
     });
 
     return () => {
@@ -57,8 +71,12 @@ export function useActiveGame() {
   return {
     game,
     connectionStatus,
+    claimedRole,
+    roleError,
     startGame: useCallback(() => send({ type: "game:start" }), [send]),
     endGame: useCallback(() => send({ type: "game:end" }), [send]),
+    claimRole: useCallback((role: GameRole) => send({ type: "role:claim", role }), [send]),
+    sendRoleHeartbeat: useCallback((role: GameRole) => send({ type: "role:heartbeat", role }), [send]),
     sendPose: useCallback((pose: UniversalPose) => send({ type: "pose:update", pose }), [send])
   };
 }

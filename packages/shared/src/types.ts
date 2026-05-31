@@ -1,4 +1,14 @@
-export type PlayerRole = "athlete" | "saboteur";
+export enum GameRole {
+  Dummy = "dummy",
+  Saboteur = "saboteur"
+}
+
+export type RoleClaimStatus = "empty" | "occupied";
+
+export type RoleClaim = {
+  status: RoleClaimStatus;
+  lastSeenAt: string | null;
+};
 
 export type JointName =
   | "head"
@@ -39,15 +49,22 @@ export type ActiveGameState = {
   activeGame: boolean;
   gameId: string | null;
   startedAt: string | null;
+  endedAt: string | null;
+  endReason: "manual" | "role-disconnected" | "role-timeout" | null;
   updatedAt: string;
   playerCount: number;
+  roles: Record<GameRole, RoleClaim>;
 };
 
 export type GameClientMessage =
   | { type: "game:start" }
   | { type: "game:end" }
+  | { type: "role:claim"; role: GameRole }
+  | { type: "role:heartbeat"; role: GameRole }
   | { type: "pose:update"; pose: UniversalPose };
 
 export type GameServerMessage =
   | { type: "game:state"; state: ActiveGameState }
+  | { type: "role:accepted"; role: GameRole }
+  | { type: "role:rejected"; role: GameRole; reason: "taken" | "inactive-game" | "invalid-role" }
   | { type: "error"; error: string };

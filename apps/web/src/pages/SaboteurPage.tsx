@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import {
+  GameRole,
   HOLE_PADDING,
   buildBlobFigure,
   starterPoses,
@@ -10,6 +11,7 @@ import {
   type UniversalJoint,
   type UniversalPose
 } from "@quackhacks/shared";
+import { useNavigate } from "react-router-dom";
 import { SaboteurSplash } from "../components/SaboteurSplash";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { cx, floorLine, humanPreview, largeStatus, pageGrid, primaryAction, secondaryAction, toolPanel } from "../lib/ui";
@@ -119,13 +121,14 @@ const jointRotationLimits: Partial<Record<JointName, JointRotationLimit>> = {
 };
 
 export function SaboteurPage() {
+  const navigate = useNavigate();
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
   const [socketStatus, setSocketStatus] = useState("WebSocket connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showHole, setShowHole] = useState(false);
-  const { connectionStatus, sendPose } = useActiveGame();
+  const { claimedRole, claimRole, connectionStatus, game, roleError, sendPose, sendRoleHeartbeat } = useActiveGame();
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
@@ -152,6 +155,40 @@ export function SaboteurPage() {
   useEffect(() => {
     setSocketStatus(`WebSocket ${connectionStatus}`);
   }, [connectionStatus]);
+
+  useEffect(() => {
+    if (connectionStatus === "connected" && game?.activeGame && claimedRole !== GameRole.Saboteur && !roleError) {
+      claimRole(GameRole.Saboteur);
+    }
+  }, [claimRole, claimedRole, connectionStatus, game?.activeGame, roleError]);
+
+  useEffect(() => {
+    if (claimedRole !== GameRole.Saboteur) {
+      return;
+    }
+
+    sendRoleHeartbeat(GameRole.Saboteur);
+    const intervalId = window.setInterval(() => sendRoleHeartbeat(GameRole.Saboteur), 5_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [claimedRole, sendRoleHeartbeat]);
+
+  useEffect(() => {
+    if (game && !game.activeGame) {
+      if (game.endReason === "role-disconnected" || game.endReason === "role-timeout") {
+        window.localStorage.setItem("quackhacks:gameEndNotice", "A player disconnected, so the game ended.");
+      }
+
+      navigate("/");
+    }
+  }, [game, navigate]);
+
+  useEffect(() => {
+    if (roleError) {
+      window.localStorage.setItem("quackhacks:gameEndNotice", "That role is not available anymore.");
+      navigate("/");
+    }
+  }, [navigate, roleError]);
 
   function randomizePose() {
     setDraftPose(null);

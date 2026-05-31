@@ -1,14 +1,22 @@
 import { DurableObject } from "cloudflare:workers";
-import type {
-  ActiveGameState,
-  GameClientMessage,
-  GameServerMessage,
-  RealtimePoseMessage
+import {
+  GameRole,
+  type ActiveGameState,
+  type GameClientMessage,
+  type GameServerMessage,
+  type RealtimePoseMessage
 } from "@quackhacks/shared";
 
 const GAME_STATE_KEY = "global-game-state";
+const HEARTBEAT_TIMEOUT_MS = 12_000;
+const HEARTBEAT_SWEEP_MS = 4_000;
 
-type StoredGameState = Omit<ActiveGameState, "playerCount">;
+type RoleSocketAttachment = {
+  role?: GameRole;
+  lastSeenAt?: string;
+};
+
+type StoredGameState = Omit<ActiveGameState, "playerCount" | "roles">;
 
 function createInactiveState(): StoredGameState {
   const now = new Date().toISOString();
@@ -17,6 +25,8 @@ function createInactiveState(): StoredGameState {
     activeGame: false,
     gameId: null,
     startedAt: null,
+    endedAt: null,
+    endReason: null,
     updatedAt: now
   };
 }
@@ -59,7 +69,17 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
     }
 
     if (message.type === "game:end") {
-      await this.endGame();
+      await this.endGame("manual");
+      return;
+    }
+
+    if (message.type === "role:claim") {
+      await this.claimRole(ws, message.role);
+      return;
+    }
+
+    if (message.type === "role:heartbeat") {
+      await this.refreshRole(ws, message.role);
       return;
     }
 
@@ -72,12 +92,26 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
     }
   }
 
-  async webSocketClose() {
+  async webSocketClose(ws: WebSocket) {
+    if (this.getSocketRole(ws)) {
+      await this.endGame("role-disconnected");
+      return;
+    }
+
     await this.broadcastState();
   }
 
-  async webSocketError() {
+  async webSocketError(ws: WebSocket) {
+    if (this.getSocketRole(ws)) {
+      await this.endGame("role-disconnected");
+      return;
+    }
+
     await this.broadcastState();
+  }
+
+  async alarm() {
+    await this.endIfRoleTimedOut();
   }
 
   private async startGame() {
@@ -88,19 +122,62 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       activeGame: true,
       gameId: current.activeGame && current.gameId ? current.gameId : crypto.randomUUID(),
       startedAt: current.activeGame && current.startedAt ? current.startedAt : now,
+      endedAt: null,
+      endReason: null,
       updatedAt: now
     });
   }
 
-  private async endGame() {
+  private async endGame(reason: StoredGameState["endReason"]) {
     const now = new Date().toISOString();
+
+    for (const socket of this.ctx.getWebSockets()) {
+      socket.serializeAttachment({});
+    }
 
     await this.saveStoredState({
       activeGame: false,
       gameId: null,
       startedAt: null,
+      endedAt: now,
+      endReason: reason,
       updatedAt: now
     });
+  }
+
+  private async claimRole(ws: WebSocket, role: GameRole) {
+    const state = await this.loadStoredState();
+    const now = new Date().toISOString();
+
+    if (!state.activeGame) {
+      this.sendRoleRejected(ws, role, "inactive-game");
+      return;
+    }
+
+    const currentOwner = this.findRoleOwner(role);
+    if (currentOwner && currentOwner !== ws) {
+      this.sendRoleRejected(ws, role, "taken");
+      return;
+    }
+
+    ws.serializeAttachment({ role, lastSeenAt: now } satisfies RoleSocketAttachment);
+    this.send(ws, { type: "role:accepted", role });
+    await this.scheduleHeartbeatSweep();
+    await this.broadcastState();
+  }
+
+  private async refreshRole(ws: WebSocket, role: GameRole) {
+    const state = await this.loadStoredState();
+    const currentRole = this.getSocketRole(ws);
+
+    if (!state.activeGame || currentRole !== role) {
+      this.sendRoleRejected(ws, role, state.activeGame ? "taken" : "inactive-game");
+      return;
+    }
+
+    ws.serializeAttachment({ role, lastSeenAt: new Date().toISOString() } satisfies RoleSocketAttachment);
+    await this.scheduleHeartbeatSweep();
+    await this.broadcastState();
   }
 
   private async loadStoredState() {
@@ -129,7 +206,8 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
 
     return {
       ...stored,
-      playerCount: this.ctx.getWebSockets().length
+      playerCount: this.ctx.getWebSockets().length,
+      roles: stored.activeGame ? this.buildRoles() : createEmptyRoles()
     };
   }
 
@@ -152,8 +230,77 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
     }
   }
 
+  private send(ws: WebSocket, message: GameServerMessage) {
+    ws.send(JSON.stringify(message));
+  }
+
   private sendError(ws: WebSocket, error: string) {
-    ws.send(JSON.stringify({ type: "error", error } satisfies GameServerMessage));
+    this.send(ws, { type: "error", error });
+  }
+
+  private sendRoleRejected(ws: WebSocket, role: GameRole, reason: "taken" | "inactive-game" | "invalid-role") {
+    this.send(ws, { type: "role:rejected", role, reason });
+  }
+
+  private buildRoles(): ActiveGameState["roles"] {
+    const roles = createEmptyRoles();
+
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = this.getSocketAttachment(socket);
+
+      if (attachment.role && isGameRole(attachment.role)) {
+        roles[attachment.role] = {
+          status: "occupied",
+          lastSeenAt: attachment.lastSeenAt ?? null
+        };
+      }
+    }
+
+    return roles;
+  }
+
+  private findRoleOwner(role: GameRole) {
+    return this.ctx.getWebSockets().find((socket) => this.getSocketRole(socket) === role) ?? null;
+  }
+
+  private getSocketRole(ws: WebSocket) {
+    const role = this.getSocketAttachment(ws).role;
+    return isGameRole(role) ? role : null;
+  }
+
+  private getSocketAttachment(ws: WebSocket): RoleSocketAttachment {
+    return (ws.deserializeAttachment() ?? {}) as RoleSocketAttachment;
+  }
+
+  private async endIfRoleTimedOut() {
+    const state = await this.loadStoredState();
+
+    if (!state.activeGame) {
+      return;
+    }
+
+    const now = Date.now();
+    const claimedRoles = Object.values(this.buildRoles()).filter((role) => role.status === "occupied");
+    const hasTimedOutRole = claimedRoles.some((role) => {
+      if (!role.lastSeenAt) {
+        return true;
+      }
+
+      return now - Date.parse(role.lastSeenAt) > HEARTBEAT_TIMEOUT_MS;
+    });
+
+    if (hasTimedOutRole) {
+      await this.endGame("role-timeout");
+      return;
+    }
+
+    if (claimedRoles.length > 0) {
+      await this.scheduleHeartbeatSweep();
+    }
+  }
+
+  private async scheduleHeartbeatSweep() {
+    await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_SWEEP_MS);
   }
 }
 
@@ -163,6 +310,17 @@ function parseClientMessage(rawMessage: string): GameClientMessage | null {
 
     if (parsed.type === "game:start" || parsed.type === "game:end") {
       return { type: parsed.type };
+    }
+
+    if (
+      (parsed.type === "role:claim" || parsed.type === "role:heartbeat") &&
+      parsed.role &&
+      isGameRole(parsed.role)
+    ) {
+      return {
+        type: parsed.type,
+        role: parsed.role
+      };
     }
 
     if (parsed.type === "pose:update" && parsed.pose) {
@@ -176,4 +334,15 @@ function parseClientMessage(rawMessage: string): GameClientMessage | null {
   }
 
   return null;
+}
+
+function createEmptyRoles(): ActiveGameState["roles"] {
+  return {
+    [GameRole.Dummy]: { status: "empty", lastSeenAt: null },
+    [GameRole.Saboteur]: { status: "empty", lastSeenAt: null }
+  };
+}
+
+function isGameRole(role: unknown): role is GameRole {
+  return role === GameRole.Dummy || role === GameRole.Saboteur;
 }

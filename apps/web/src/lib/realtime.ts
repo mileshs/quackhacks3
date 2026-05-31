@@ -26,7 +26,13 @@ export function parseGameSocketMessage(rawMessage: MessageEvent["data"]): GameSo
   try {
     const parsed = JSON.parse(rawMessage) as GameSocketMessage;
 
-    if (parsed.type === "game:state" || parsed.type === "pose:update" || parsed.type === "error") {
+    if (
+      parsed.type === "game:state" ||
+      parsed.type === "pose:update" ||
+      parsed.type === "role:accepted" ||
+      parsed.type === "role:rejected" ||
+      parsed.type === "error"
+    ) {
       return parsed;
     }
   } catch {

@@ -27,7 +27,7 @@ export function ScorePage() {
         </div>
       </dl>
       <div className={cx(heroActions, "justify-center")}>
-        <Link className={primaryAction} to="/game">
+        <Link className={primaryAction} to="/">
           Play Again
         </Link>
         <Link className={secondaryAction} to="/saboteur">

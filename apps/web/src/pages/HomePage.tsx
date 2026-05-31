@@ -1,13 +1,14 @@
 import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
+import { useEffect, useState } from "react";
+import { GameRole } from "@quackhacks/shared";
 import { Link, useNavigate } from "react-router-dom";
 import { cx } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
 
-type HomeIcon = "pose" | "stop" | "trophy" | "gear";
+type HomeIcon = "pose" | "stop" | "gear";
 
 const secondaryMenuItems: Array<{ to: string; label: string; icon: HomeIcon; tone: "light" }> = [
-  { to: "/leaderboard", label: "Leaderboard", icon: "trophy", tone: "light" },
   { to: "/settings", label: "Settings", icon: "gear", tone: "light" }
 ];
 
@@ -36,24 +37,6 @@ function MenuIcon({ icon }: { icon: HomeIcon }) {
           d="M22 8h20l14 14v20L42 56H22L8 42V22L22 8Zm2.6 12.2a4.4 4.4 0 0 0-4.4 4.4v14.8a4.4 4.4 0 0 0 4.4 4.4h14.8a4.4 4.4 0 0 0 4.4-4.4V24.6a4.4 4.4 0 0 0-4.4-4.4H24.6Z"
         />
         <rect x="24" y="24" width="16" height="16" rx="3.8" fill="#d93236" />
-      </svg>
-    );
-  }
-
-  if (icon === "trophy") {
-    return (
-      <svg className="size-12 overflow-visible" viewBox="0 0 64 64" aria-hidden="true">
-        <defs>
-          <linearGradient id="trophy-fill" x1="0" x2="0" y1="10" y2="61" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#ff9d27" />
-            <stop offset="0.58" stopColor="#ff8217" />
-            <stop offset="1" stopColor="#ed6d0e" />
-          </linearGradient>
-        </defs>
-        <path
-          fill="url(#trophy-fill)"
-          d="M19 12h26v7h8.5a4 4 0 0 1 4 4v4c0 8.5-6.1 15.4-14.1 17a16 16 0 0 1-7.3 5.2V54h9.2a3.4 3.4 0 0 1 0 6.8H18.7a3.4 3.4 0 0 1 0-6.8h9.2v-4.8a16 16 0 0 1-7.3-5.2c-8-1.6-14.1-8.5-14.1-17v-4a4 4 0 0 1 4-4H19v-7Zm0 14v-.5h-5.2V27c0 3.7 2.2 6.9 5.4 8.2-.1-1.2-.2-2.5-.2-3.8V26Zm25.8 9.2c3.2-1.3 5.4-4.5 5.4-8.2v-1.5H45v.5v5.4c0 1.3-.1 2.6-.2 3.8Z"
-        />
       </svg>
     );
   }
@@ -106,14 +89,35 @@ function HomeDecor() {
 export function HomePage() {
   const navigate = useNavigate();
   const { game, startGame, endGame } = useActiveGame();
+  const [gameEndNotice, setGameEndNotice] = useState<string | null>(null);
   const isGameActive = game?.activeGame ?? false;
+  const isDummyTaken = game?.roles[GameRole.Dummy].status === "occupied";
+  const isSaboteurTaken = game?.roles[GameRole.Saboteur].status === "occupied";
+  const isGameFull = isDummyTaken && isSaboteurTaken;
 
-  function openGame() {
-    if (!isGameActive) {
-      startGame();
+  useEffect(() => {
+    const notice = window.localStorage.getItem("quackhacks:gameEndNotice");
+
+    if (notice) {
+      setGameEndNotice(notice);
+      window.localStorage.removeItem("quackhacks:gameEndNotice");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!game?.activeGame && (game?.endReason === "role-disconnected" || game?.endReason === "role-timeout")) {
+      setGameEndNotice("A player disconnected, so the game ended.");
+    }
+  }, [game?.activeGame, game?.endedAt, game?.endReason]);
+
+  function joinRole(role: GameRole) {
+    if (role === GameRole.Saboteur && !isSaboteurTaken) {
+      navigate("/saboteur");
     }
 
-    navigate("/game");
+    if (role === GameRole.Dummy && !isDummyTaken) {
+      navigate("/pose-test");
+    }
   }
 
   return (
@@ -132,12 +136,53 @@ export function HomePage() {
           alt="Poses for Dummies"
         />
         <nav className="flex w-[clamp(370px,24.2vw,406px)] max-w-full flex-col gap-[clamp(0.7rem,1.8svh,1.35rem)]" aria-label="Home">
-          <button className={cx(menuButtonBase, menuButtonTone.primary)} type="button" onClick={openGame}>
-            <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
-              <MenuIcon icon="pose" />
-            </span>
-            <span>{isGameActive ? "Join Game" : "New Game"}</span>
-          </button>
+          {gameEndNotice ? (
+            <p className="m-0 rounded-2xl bg-white/70 px-5 py-3 text-center text-base leading-tight font-black text-[#8c3d18] shadow-[inset_0_2px_0_rgba(255,255,255,0.72)]">
+              {gameEndNotice}
+            </p>
+          ) : null}
+          {!isGameActive ? (
+            <button className={cx(menuButtonBase, menuButtonTone.primary)} type="button" onClick={startGame}>
+              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+                <MenuIcon icon="pose" />
+              </span>
+              <span>New Game</span>
+            </button>
+          ) : null}
+          {isGameActive ? (
+            <button
+              className={cx(menuButtonBase, menuButtonTone.primary, isSaboteurTaken && "cursor-not-allowed opacity-55")}
+              type="button"
+              onClick={() => joinRole(GameRole.Saboteur)}
+              disabled={isSaboteurTaken}
+            >
+              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+                <MenuIcon icon="pose" />
+              </span>
+              <span>{isSaboteurTaken ? "Saboteur Taken" : "Join as Saboteur"}</span>
+            </button>
+          ) : null}
+          {isGameActive ? (
+            <button
+              className={cx(menuButtonBase, menuButtonTone.primary, isDummyTaken && "cursor-not-allowed opacity-55")}
+              type="button"
+              onClick={() => joinRole(GameRole.Dummy)}
+              disabled={isDummyTaken}
+            >
+              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+                <MenuIcon icon="pose" />
+              </span>
+              <span>{isDummyTaken ? "Dummy Taken" : "Join as Dummy"}</span>
+            </button>
+          ) : null}
+          {isGameActive && isGameFull ? (
+            <button className={cx(menuButtonBase, menuButtonTone.light, "cursor-not-allowed opacity-70")} type="button" disabled>
+              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+                <MenuIcon icon="stop" />
+              </span>
+              <span>Game Full</span>
+            </button>
+          ) : null}
           {isGameActive ? (
             <button className={cx(menuButtonBase, menuButtonTone.danger)} type="button" onClick={endGame}>
               <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
