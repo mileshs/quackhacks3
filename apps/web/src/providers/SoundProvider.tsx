@@ -252,6 +252,50 @@ export function SoundProvider({ children }: { children: ReactNode }) {
   }, [soundEffectsVolume]);
 
   useEffect(() => {
+    function playButtonClickFromTarget(target: EventTarget | null) {
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const button = target.closest("button");
+      if (button) {
+        if (!button.disabled && !button.hasAttribute("data-no-click-sound")) {
+          playSoundEffect("buttonClick");
+        }
+        return;
+      }
+
+      const anchor = target.closest("a[href]");
+      if (anchor && !anchor.hasAttribute("data-no-click-sound")) {
+        playSoundEffect("buttonClick");
+      }
+    }
+
+    const onDocumentPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+
+      playButtonClickFromTarget(event.target);
+    };
+
+    const onDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || (event.key !== "Enter" && event.key !== " ")) {
+        return;
+      }
+
+      playButtonClickFromTarget(event.target);
+    };
+
+    document.addEventListener("pointerdown", onDocumentPointerDown, true);
+    document.addEventListener("keydown", onDocumentKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
+    };
+  }, [playSoundEffect]);
+
+  useEffect(() => {
     const intervalId = window.setInterval(() => {
       const soundtrack = activeSoundtrackId ? soundtrackRefs.current[activeSoundtrackId] : null;
       if (!soundtrack) {
