@@ -1,11 +1,17 @@
 import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
 import { useEffect } from "react";
-import { GameRole } from "@quackhacks/shared";
+import { BLOB_COLOR, GameRole } from "@quackhacks/shared";
 import { Link, useNavigate } from "react-router-dom";
 import { flushQueuedGameNotice } from "../lib/gameNotifications";
 import { cx } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
+
+/** Saboteur accent — matches `pillDanger` / saboteur HUD red in `ui.ts`. */
+const SABOTEUR_COLOR = "#ef5c6b";
+/** Darker tints for facial features on the role icons. */
+const SABOTEUR_FACE_COLOR = "#7a2035";
+const DUMMY_FACE_COLOR = "#1248a0";
 
 type HomeIcon = "pose" | "stop" | "gear";
 
@@ -14,7 +20,21 @@ const secondaryMenuItems: Array<{ to: string; label: string; icon: HomeIcon; ton
 ];
 
 const menuButtonBase =
-  "relative grid min-h-[4.85rem] grid-cols-[5.85rem_minmax(0,1fr)] items-center rounded-[1.55rem] px-7 py-2 pl-2 text-left text-[clamp(1.22rem,1.55vw,1.62rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 [&>span:last-child]:justify-self-start [&>span:last-child]:whitespace-nowrap min-[1181px]:grid-cols-[6.8rem_minmax(0,1fr)] min-[1181px]:rounded-[1.72rem] min-[1181px]:text-[clamp(1.32rem,1.68vw,1.64rem)]";
+  "relative grid min-h-[4.85rem] cursor-pointer grid-cols-[5.85rem_minmax(0,1fr)] items-center rounded-[1.55rem] px-7 py-2 pl-2 text-left text-[clamp(1.22rem,1.55vw,1.62rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 disabled:cursor-not-allowed [&>span:last-child]:justify-self-start [&>span:last-child]:whitespace-nowrap min-[1181px]:grid-cols-[6.8rem_minmax(0,1fr)] min-[1181px]:rounded-[1.72rem] min-[1181px]:text-[clamp(1.32rem,1.68vw,1.64rem)]";
+
+const roleCardBase =
+  "flex min-h-[11.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded-[1.55rem] border px-3 py-4 text-center text-[clamp(1.05rem,1.35vw,1.28rem)] leading-none font-black tracking-normal uppercase transition duration-200 active:translate-y-1 disabled:cursor-not-allowed disabled:opacity-55 min-[1181px]:min-h-[12.25rem] min-[1181px]:rounded-[1.72rem] min-[1181px]:text-[clamp(1.12rem,1.45vw,1.34rem)] shadow-[inset_0_2px_0_rgba(255,255,255,0.55),inset_0_-3px_0_rgba(0,0,0,0.06),0_8px_18px_rgba(80,55,0,0.1)]";
+
+const roleCardSaboteur =
+  "border-[#f4b4b8] bg-[#ffe4e1] text-[#28303d] hover:bg-[#ffd8d3]";
+
+const roleCardDummy =
+  "border-[#b8cff5] bg-[#dceaff] text-[#28303d] hover:bg-[#cfe3ff]";
+
+const roleCardBlurb =
+  "max-w-[12rem] text-[clamp(14px,1.35vw,16px)] font-extrabold normal-case leading-snug tracking-normal text-[#28303d]";
+
+const roleIconClass = "size-[clamp(3.25rem,5.5vw,4rem)] drop-shadow-sm";
 
 const menuButtonTone = {
   primary:
@@ -57,6 +77,64 @@ function MenuIcon({ icon }: { icon: HomeIcon }) {
         d="M28.6 6.5h6.8l1.3 7.3a19.4 19.4 0 0 1 5.1 2.1l6.1-4.2 4.8 4.8-4.2 6.1a19.4 19.4 0 0 1 2.1 5.1l7.3 1.3v6.8l-7.3 1.3a19.4 19.4 0 0 1-2.1 5.1l4.2 6.1-4.8 4.8-6.1-4.2a19.4 19.4 0 0 1-5.1 2.1l-1.3 7.3h-6.8L27.3 51a19.4 19.4 0 0 1-5.1-2.1l-6.1 4.2-4.8-4.8 4.2-6.1a19.4 19.4 0 0 1-2.1-5.1l-7.3-1.3V29l7.3-1.3a19.4 19.4 0 0 1 2.1-5.1l-4.2-6.1 4.8-4.8 6.1 4.2a19.4 19.4 0 0 1 5.1-2.1l1.3-7.3ZM32 42.4A10.4 10.4 0 1 0 32 21.6a10.4 10.4 0 0 0 0 20.8Zm0-6.3a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Z"
         clipRule="evenodd"
       />
+    </svg>
+  );
+}
+
+function SaboteurIcon() {
+  return (
+    <svg className={roleIconClass} viewBox="0 0 64 72" aria-hidden="true">
+      <path fill={SABOTEUR_COLOR} d="M19 22c-3.8-5.4-6-11-6-17 4.6 4.7 8.3 9.9 12 15-2.2.3-4.1 1-6 2Z" />
+      <path fill={SABOTEUR_COLOR} d="M45 22c3.8-5.4 6-11 6-17-4.6 4.7-8.3 9.9-12 15 2.2.3 4.1 1 6 2Z" />
+      <ellipse cx="32" cy="38" rx="21" ry="24" fill={SABOTEUR_COLOR} />
+      <path stroke={SABOTEUR_FACE_COLOR} strokeLinecap="round" strokeWidth="2.8" d="M22 35 28 39" />
+      <path stroke={SABOTEUR_FACE_COLOR} strokeLinecap="round" strokeWidth="2.8" d="M36 39 42 35" />
+      <path
+        fill="none"
+        stroke={SABOTEUR_FACE_COLOR}
+        strokeLinecap="round"
+        strokeWidth="2.8"
+        d="M22 48c3.2 4.2 16.8 4.2 20 0"
+      />
+    </svg>
+  );
+}
+
+function DummyIcon() {
+  return (
+    <svg className={roleIconClass} viewBox="0 0 64 72" aria-hidden="true">
+      <ellipse cx="32" cy="36" rx="22" ry="26" fill={BLOB_COLOR} />
+      <g transform="translate(32 38) scale(0.88) translate(-32 -38)">
+        <path
+          fill="none"
+          stroke={DUMMY_FACE_COLOR}
+          strokeLinecap="round"
+          strokeWidth="3"
+          d="M17 35q5-7 10 0"
+        />
+        <path
+          fill="none"
+          stroke={DUMMY_FACE_COLOR}
+          strokeLinecap="round"
+          strokeWidth="3"
+          d="M37 35q5-7 10 0"
+        />
+        <path
+          fill="none"
+          stroke={DUMMY_FACE_COLOR}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2.4"
+          d="M32 37v8h5"
+        />
+        <path
+          fill="none"
+          stroke={DUMMY_FACE_COLOR}
+          strokeLinecap="round"
+          strokeWidth="2.6"
+          d="M20 49q12 10 24 0"
+        />
+      </g>
     </svg>
   );
 }
@@ -138,30 +216,28 @@ export function HomePage() {
             </button>
           ) : null}
           {isGameActive ? (
-            <button
-              className={cx(menuButtonBase, menuButtonTone.primary, isSaboteurTaken && "cursor-not-allowed opacity-55")}
-              type="button"
-              onClick={() => joinRole(GameRole.Saboteur)}
-              disabled={isSaboteurTaken}
-            >
-              <span className="grid size-[3.45rem] place-items-center justify-self-center drop-shadow-sm">
-                <MenuIcon icon="pose" />
-              </span>
-              <span>{isSaboteurTaken ? "Saboteur Taken" : "Saboteur"}</span>
-            </button>
-          ) : null}
-          {isGameActive ? (
-            <button
-              className={cx(menuButtonBase, menuButtonTone.primary, isDummyTaken && "cursor-not-allowed opacity-55")}
-              type="button"
-              onClick={() => joinRole(GameRole.Dummy)}
-              disabled={isDummyTaken}
-            >
-              <span className="grid size-[3.45rem] place-items-center justify-self-center drop-shadow-sm">
-                <MenuIcon icon="pose" />
-              </span>
-              <span>{isDummyTaken ? "Dummy Taken" : "Dummy"}</span>
-            </button>
+            <div className="grid grid-cols-2 gap-[clamp(0.85rem,2vw,1.15rem)]">
+              <button
+                className={cx(roleCardBase, roleCardSaboteur)}
+                type="button"
+                onClick={() => joinRole(GameRole.Saboteur)}
+                disabled={isSaboteurTaken}
+              >
+                <SaboteurIcon />
+                <span>{isSaboteurTaken ? "Saboteur Taken" : "Saboteur"}</span>
+                <p className={roleCardBlurb}>Draw the walls they have to match.</p>
+              </button>
+              <button
+                className={cx(roleCardBase, roleCardDummy)}
+                type="button"
+                onClick={() => joinRole(GameRole.Dummy)}
+                disabled={isDummyTaken}
+              >
+                <DummyIcon />
+                <span>{isDummyTaken ? "Dummy Taken" : "Dummy"}</span>
+                <p className={roleCardBlurb}>Strike the pose and survive.</p>
+              </button>
+            </div>
           ) : null}
           {isGameActive && isGameFull ? (
             <button className={cx(menuButtonBase, menuButtonTone.light, "cursor-not-allowed opacity-70")} type="button" disabled>

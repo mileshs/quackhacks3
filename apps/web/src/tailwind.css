@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+@layer base {
+  button:not(:disabled),
+  a[href] {
+    cursor: pointer;
+  }
+}
+
 @theme {
   --animate-winner-pulse: winner-pulse 2s ease-in-out infinite;
 
