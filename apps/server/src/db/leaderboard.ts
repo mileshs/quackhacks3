@@ -1,12 +1,12 @@
 import { asc, count, desc, eq } from "drizzle-orm";
 import type { CreateLeaderboardEntry, LeaderboardEntry } from "@quackhacks/shared";
-import { ensureDatabase, getDatabasePath } from "./client.js";
+import { getDatabase, getDatabaseBindingName } from "./client.js";
 import { leaderboardEntries } from "./schema.js";
 
-export { getDatabasePath };
+export { getDatabaseBindingName };
 
 export async function countLeaderboardEntries() {
-  const [row] = await ensureDatabase()
+  const [row] = await getDatabase()
     .select({ value: count() })
     .from(leaderboardEntries);
 
@@ -14,7 +14,7 @@ export async function countLeaderboardEntries() {
 }
 
 export async function listLeaderboardEntries() {
-  return ensureDatabase()
+  return getDatabase()
     .select({
       id: leaderboardEntries.id,
       playerName: leaderboardEntries.playerName,
@@ -34,7 +34,7 @@ export async function listLeaderboardEntries() {
 
 export async function createLeaderboardEntry(input: CreateLeaderboardEntry) {
   const now = new Date().toISOString();
-  const [entry] = await ensureDatabase()
+  const [entry] = await getDatabase()
     .insert(leaderboardEntries)
     .values({
       playerName: input.playerName,
@@ -56,7 +56,7 @@ export async function createLeaderboardEntry(input: CreateLeaderboardEntry) {
 }
 
 export async function getLeaderboardEntry(id: number) {
-  const [entry] = await ensureDatabase()
+  const [entry] = await getDatabase()
     .select({
       id: leaderboardEntries.id,
       playerName: leaderboardEntries.playerName,

@@ -34,3 +34,20 @@ export type RealtimePoseMessage = {
   pose: UniversalPose;
   sentAt: string;
 };
+
+export type ActiveGameState = {
+  activeGame: boolean;
+  gameId: string | null;
+  startedAt: string | null;
+  updatedAt: string;
+  playerCount: number;
+};
+
+export type GameClientMessage =
+  | { type: "game:start" }
+  | { type: "game:end" }
+  | { type: "pose:update"; pose: UniversalPose };
+
+export type GameServerMessage =
+  | { type: "game:state"; state: ActiveGameState }
+  | { type: "error"; error: string };

@@ -10,10 +10,10 @@ import {
   type UniversalJoint,
   type UniversalPose
 } from "@quackhacks/shared";
-import { createSocketConnection } from "../lib/realtime";
 import { SaboteurSplash } from "../components/SaboteurSplash";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { cx, floorLine, humanPreview, largeStatus, pageGrid, primaryAction, secondaryAction, toolPanel } from "../lib/ui";
+import { useActiveGame } from "../lib/useActiveGame";
 
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 
@@ -122,17 +122,16 @@ export function SaboteurPage() {
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
-  const [socketStatus, setSocketStatus] = useState("Socket.IO connecting");
+  const [socketStatus, setSocketStatus] = useState("WebSocket connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showHole, setShowHole] = useState(false);
+  const { connectionStatus, sendPose } = useActiveGame();
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
     }
     return window.localStorage.getItem(SPLASH_SEEN_STORAGE_KEY) !== "true";
   });
-  const socketRef = useRef<ReturnType<typeof createSocketConnection> | null>(null);
-
   function dismissSplash() {
     setShowSplash(false);
     if (typeof window !== "undefined") {
@@ -151,17 +150,8 @@ export function SaboteurPage() {
   const canDeleteSelectedPose = !draftPose && selectedSavedPoseIndex >= 0 && selectedSavedPoseIndex < savedPoses.length;
 
   useEffect(() => {
-    const socket = createSocketConnection();
-    socketRef.current = socket;
-
-    socket.on("connect", () => setSocketStatus(`Socket.IO connected: ${socket.id}`));
-    socket.on("server:hello", () => setSocketStatus(`Socket.IO ready: ${socket.id}`));
-    socket.on("connect_error", () => setSocketStatus("Socket.IO unavailable"));
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+    setSocketStatus(`WebSocket ${connectionStatus}`);
+  }, [connectionStatus]);
 
   function randomizePose() {
     setDraftPose(null);
@@ -225,7 +215,7 @@ export function SaboteurPage() {
   }
 
   function broadcastPose(selectedPose: UniversalPose) {
-    socketRef.current?.emit("pose:preview", selectedPose);
+    sendPose(selectedPose);
     setSocketStatus(`Sent ${selectedPose.name}`);
   }
 
