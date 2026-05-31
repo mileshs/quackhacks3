@@ -1,12 +1,12 @@
 import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
-import { Link } from "react-router-dom";
-import { cx } from "../lib/ui";
+import { Link, useNavigate } from "react-router-dom";
+import { cx, secondaryAction } from "../lib/ui";
+import { useActiveGame } from "../lib/useActiveGame";
 
 type HomeIcon = "pose" | "trophy" | "gear";
 
-const menuItems: Array<{ to: string; label: string; icon: HomeIcon; tone: "primary" | "light" }> = [
-  { to: "/game", label: "New Game", icon: "pose", tone: "primary" },
+const secondaryMenuItems: Array<{ to: string; label: string; icon: HomeIcon; tone: "light" }> = [
   { to: "/leaderboard", label: "Leaderboard", icon: "trophy", tone: "light" },
   { to: "/settings", label: "Settings", icon: "gear", tone: "light" }
 ];
@@ -19,7 +19,7 @@ const menuButtonTone = {
     "border border-[#ee9a06] bg-[#ffaf09] text-white shadow-[inset_0_3px_0_rgba(255,255,255,0.54),inset_0_-3px_0_rgba(206,120,0,0.22)] [text-shadow:0_2px_0_rgba(156,86,0,0.24)] hover:bg-[#f7a407]",
   light:
     "bg-[#fff4df] text-[#28303d] shadow-[inset_0_2px_0_rgba(255,255,255,0.68),inset_0_-3px_0_rgba(221,179,83,0.22)] [text-shadow:0_1px_0_rgba(255,255,255,0.45)] hover:bg-[#f8ead0]"
-} satisfies Record<(typeof menuItems)[number]["tone"], string>;
+} satisfies Record<"primary" | "light", string>;
 
 function MenuIcon({ icon }: { icon: HomeIcon }) {
   if (icon === "pose") {
@@ -90,6 +90,18 @@ function HomeDecor() {
 }
 
 export function HomePage() {
+  const navigate = useNavigate();
+  const { game, startGame, endGame } = useActiveGame();
+  const isGameActive = game?.activeGame ?? false;
+
+  function openGame() {
+    if (!isGameActive) {
+      startGame();
+    }
+
+    navigate("/game");
+  }
+
   return (
     <section
       className="fixed inset-0 z-20 grid min-h-svh items-start justify-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_23%,rgba(255,248,190,0.42)_0_8.5rem,rgba(255,248,190,0)_25rem),radial-gradient(circle_at_98%_-10%,rgba(255,248,210,0.3)_0_16rem,rgba(255,248,210,0)_16.08rem),linear-gradient(145deg,#ffe066_0%,#ffd13c_43%,#ffc127_100%)] font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] text-[#28303d] before:absolute before:inset-0 before:bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0_1px,transparent_1.45px),linear-gradient(105deg,rgba(255,247,171,0.22),transparent_42%)] before:bg-[length:17px_17px,100%_100%] before:opacity-[0.48]"
@@ -106,9 +118,20 @@ export function HomePage() {
           alt="Poses for Dummies"
         />
         <nav className="mt-[clamp(1.15rem,2.7vh,1.65rem)] grid w-[clamp(370px,24.2vw,406px)] max-w-full gap-[clamp(1.15rem,2.6vh,1.55rem)]" aria-label="Home">
-          {menuItems.map((item) => (
+          <button className={cx(menuButtonBase, menuButtonTone.primary)} type="button" onClick={openGame}>
+            <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
+              <MenuIcon icon="pose" />
+            </span>
+            <span>{isGameActive ? "Join Game" : "New Game"}</span>
+          </button>
+          {isGameActive ? (
+            <button className={cx(secondaryAction, "min-h-[3.5rem] text-[1.08rem] uppercase")} type="button" onClick={endGame}>
+              End Game
+            </button>
+          ) : null}
+          {secondaryMenuItems.map((item) => (
             <Link key={item.to} className={cx(menuButtonBase, menuButtonTone[item.tone])} to={item.to}>
-              <span className={cx("grid size-[3.75rem] place-items-center justify-self-center", item.tone === "primary" ? "drop-shadow-sm" : "text-[#ff8217]")}>
+              <span className="grid size-[3.75rem] place-items-center justify-self-center text-[#ff8217]">
                 <MenuIcon icon={item.icon} />
               </span>
               <span>{item.label}</span>
