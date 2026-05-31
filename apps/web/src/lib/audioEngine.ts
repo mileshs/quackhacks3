@@ -1,6 +1,37 @@
-export const AUDIO_ASSETS = {
-  soundtrackSpeedy: "/assets/soundtrack_speedy.mp3",
+export const SOUNDTRACK_ASSETS = {
+  normal: "/assets/soundtrack_normal.mp3",
+  speedy: "/assets/soundtrack_speedy.mp3",
+} as const;
+
+export const SOUND_EFFECT_ASSETS = {
+  boo: "/assets/boo.mp3",
+  bruh: "/assets/bruh.mp3",
+  buttonClick: "/assets/button_click.mp3",
+  cheer: "/assets/cheer.mp3",
+  countdown: "/assets/countdown.mp3",
+  death: "/assets/death.mp3",
+  excellent: "/assets/excellent.mp3",
+  gameOver: "/assets/game_over.mp3",
+  good: "/assets/good.mp3",
+  great: "/assets/great.mp3",
+  healthChip: "/assets/health_chip.mp3",
+  icicleFreeze: "/assets/icicle_freeze.mp3",
+  perfect: "/assets/perfect.mp3",
+  shieldBreak: "/assets/shield_break.mp3",
+  shieldUp: "/assets/shield_up.mp3",
+  skeletonAdjustment1: "/assets/skeleton_adjustment1.mp3",
+  skeletonAdjustment2: "/assets/skeleton_adjustment2.mp3",
   timeWarp: "/assets/time_warp.mp3",
+  wtf: "/assets/wtf.mp3",
+} as const;
+
+export type SoundtrackId = keyof typeof SOUNDTRACK_ASSETS;
+export type SoundEffectId = keyof typeof SOUND_EFFECT_ASSETS;
+
+/** @deprecated Prefer SOUNDTRACK_ASSETS / SOUND_EFFECT_ASSETS */
+export const AUDIO_ASSETS = {
+  soundtrackSpeedy: SOUNDTRACK_ASSETS.speedy,
+  timeWarp: SOUND_EFFECT_ASSETS.timeWarp,
 } as const;
 
 // --- Soundtrack tempo map (soundtrack_speedy) ---

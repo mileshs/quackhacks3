@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
+import { FinalScreenPage } from "./pages/FinalScreenPage";
 import { GamePage } from "./pages/GamePage";
 import { HomePage } from "./pages/HomePage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
@@ -15,6 +16,7 @@ const navItems = [
   { to: "/game", label: "Game" },
   { to: "/pose-test", label: "Pose Test" },
   { to: "/saboteur", label: "Saboteur" },
+  { to: "/final-screen", label: "Final Screen" },
   { to: "/leaderboard", label: "Leaderboard" },
   { to: "/settings", label: "Settings" }
 ];
@@ -49,6 +51,7 @@ export function App() {
             <Route path="/game" element={<GamePage />} />
             <Route path="/pose-test" element={<PoseTestPage />} />
             <Route path="/saboteur" element={<SaboteurPage />} />
+            <Route path="/final-screen" element={<FinalScreenPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/score" element={<ScorePage />} />
