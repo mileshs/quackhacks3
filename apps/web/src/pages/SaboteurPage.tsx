@@ -22,7 +22,8 @@ import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
 import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
-import { cx, canvasPanel, saboteurJointHandleClass, saboteurStageBoundsRect, saboteurStageFloorLine, saboteurTorsoHandleIcon, saboteurViewport } from "../lib/ui";
+import { useChrome } from "../lib/chrome";
+import { cx, pillDanger, saboteurCard, saboteurJointHandleClass, saboteurPageBg, saboteurPillSecondary, saboteurStageBoundsRect, saboteurStageFloorLine, saboteurTorsoHandleIcon, saboteurViewport } from "../lib/ui";
 
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 const JOINT_HANDLE_RADIUS = 10;
@@ -123,7 +124,19 @@ const jointRotationLimits: Partial<Record<JointName, JointRotationLimit>> = {
   rightAnkle: { centerDegrees: 90, radiusDegrees: 95 }
 };
 
+function HamburgerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
 export function SaboteurPage() {
+  const { setNavHidden } = useChrome();
+  // Dev mode reveals the developer-only chrome: the global navbar, the "Your Progress"
+  // tracker, and the reward simulator buttons. Off by default for a clean player view.
+  const [devMode, setDevMode] = useState(false);
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
@@ -149,6 +162,12 @@ export function SaboteurPage() {
       window.localStorage.setItem(SPLASH_SEEN_STORAGE_KEY, "true");
     }
   }
+
+  // The navbar is hidden on this page unless dev mode is on; restore it on unmount.
+  useEffect(() => {
+    setNavHidden(!devMode);
+    return () => setNavHidden(false);
+  }, [devMode, setNavHidden]);
 
   useEffect(() => {
     persistSavedPoses(savedPoses);
@@ -332,46 +351,69 @@ export function SaboteurPage() {
   const socketReady = /ready|connected/i.test(socketStatus);
 
   return (
-    <section className="relative mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
+    <>
+      <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
+      <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
       {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)] lg:items-stretch">
         <div className="flex min-h-0 flex-col gap-3">
-          <div className={cx(canvasPanel, "relative flex min-h-[min(68vh,640px)] flex-col overflow-hidden border-white/8 bg-[#08080a]")}>
-            <div className="flex flex-1 items-center justify-center px-2 py-2">
-              {showHole ? (
-                <SaboteurHolePreview pose={displayPose} />
-              ) : draftPose ? (
-                <SaboteurPoseEditor pose={draftPose} onChange={setDraftPose} />
-              ) : (
-                <SaboteurPosePreview pose={displayPose} />
-              )}
+          {/* Canvas card: stage + tool buttons along the bottom of the dark viewport. */}
+          <div className={cx(saboteurCard, "relative flex min-h-[min(70vh,680px)] flex-1 flex-col overflow-hidden p-3")}>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-[#0c0d12] shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)]">
+              <div className="flex min-h-0 flex-1 items-center justify-center px-2 py-2">
+                {showHole ? (
+                  <SaboteurHolePreview pose={displayPose} />
+                ) : draftPose ? (
+                  <SaboteurPoseEditor pose={draftPose} onChange={setDraftPose} />
+                ) : (
+                  <SaboteurPosePreview pose={displayPose} />
+                )}
+              </div>
+
+              <SaboteurToolbar
+                draftActive={Boolean(draftPose)}
+                showHole={showHole}
+                saveError={saveError}
+                onMakePose={makePose}
+                onEditPose={editSelectedPose}
+                onCancelDraft={cancelDraft}
+                onToggleHole={() => setShowHole((current) => !current)}
+                onSavePose={addPose}
+                onSendPose={sendPose}
+              />
             </div>
           </div>
 
-          <SaboteurToolbar
-            draftActive={Boolean(draftPose)}
-            showHole={showHole}
-            saveError={saveError}
-            onMakePose={makePose}
-            onEditPose={editSelectedPose}
-            onCancelDraft={cancelDraft}
-            onToggleHole={() => setShowHole((current) => !current)}
-            onSavePose={addPose}
-            onSendPose={sendPose}
-          />
-
-          <footer className="px-1 pb-1">
-            <div className="flex flex-wrap items-center gap-3 text-xs text-[#8a8274]">
-              <span className="inline-flex items-center gap-1.5">
-                <span className={cx("inline-block h-2 w-2 rounded-full", socketReady ? "bg-[#ef5c6b]" : "bg-[#8a8274]")} />
-                {socketReady ? "Connected & ready" : "Connecting…"}
-              </span>
-              <span className="hidden sm:inline">{socketStatus}</span>
-            </div>
-          </footer>
+          {devMode ? (
+            <footer className={cx(saboteurCard, "px-4 py-2.5")}>
+              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-[#8b919c]">
+                <span className="inline-flex items-center gap-1.5 text-[#ece8e0]">
+                  <span className={cx("inline-block h-2.5 w-2.5 rounded-full", socketReady ? "bg-[#2fb86b]" : "bg-[#5c6068]")} />
+                  {socketReady ? "Connected & ready" : "Connecting…"}
+                </span>
+                <span className="hidden sm:inline">{socketStatus}</span>
+              </div>
+            </footer>
+          ) : null}
         </div>
 
-        <aside className="flex flex-col gap-3">
+        <aside className="flex min-h-0 flex-1 flex-col gap-3">
+          <button
+            type="button"
+            className={cx(
+              devMode ? pillDanger : saboteurPillSecondary,
+              "w-full px-4 py-2.5 text-[13px] uppercase tracking-[0.08em]"
+            )}
+            aria-pressed={devMode}
+            onClick={() => setDevMode((on) => !on)}
+          >
+            <span className="inline-flex w-full items-center justify-center gap-2">
+              <HamburgerIcon />
+              Controls
+            </span>
+          </button>
+
           <SaboteurDeckPanel
             poses={poseList}
             selectedIndex={poseIndex}
@@ -382,6 +424,7 @@ export function SaboteurPage() {
             inventory={powerupProgress.inventory}
             perfectStreak={powerupProgress.perfectStreak}
             movesSinceGrant={powerupProgress.movesSinceGrant}
+            showDevSections={devMode}
             onActivate={activatePowerup}
             onSimulatePerfect={simulatePerfectRound}
             onSimulateMove={simulateMove}
@@ -389,6 +432,7 @@ export function SaboteurPage() {
         </aside>
       </div>
     </section>
+    </>
   );
 }
 
@@ -509,7 +553,10 @@ function SaboteurPosePreview({ pose }: { pose: UniversalPose }) {
   );
 }
 
-const WALL_FILL = "#4a5b86";
+// The saboteur's red wall the pose carves a hole through (red counterpart of the
+// athlete's yellow wall).
+const WALL_TOP = "#ff6b78";
+const WALL_BOTTOM = "#d8313f";
 
 // The figure's solid outline, used as the cutout for the hole. `pad` inflates
 // every limb so the hole leaves generous room around the pose. Shares geometry with
@@ -555,11 +602,12 @@ function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
             <FigureSilhouette jointMap={jointMap} color="black" pad={HOLE_PADDING} />
           </g>
         </mask>
+        <linearGradient id={`${maskId}-wall`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={WALL_TOP} />
+          <stop offset="1" stopColor={WALL_BOTTOM} />
+        </linearGradient>
       </defs>
-      <rect x={0} y={0} width={STAGE_WIDTH} height={STAGE_HEIGHT} fill={WALL_FILL} mask={`url(#${maskId})`} />
-      <g transform={dummyTransform}>
-        <StageBounds />
-      </g>
+      <rect x={0} y={0} width={STAGE_WIDTH} height={STAGE_HEIGHT} fill={`url(#${maskId}-wall)`} mask={`url(#${maskId})`} />
     </svg>
   );
 }
