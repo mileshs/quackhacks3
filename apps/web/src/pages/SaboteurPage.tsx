@@ -515,7 +515,7 @@ export function SaboteurPage() {
         </aside>
       </div>
     </section>
-      <SaboteurTutorialOverlay runKey={tutorialRun} />
+      <SaboteurTutorialOverlay runKey={tutorialRun} splashOpen={showSplash} />
     </RoleGameShell>
   );
 }
