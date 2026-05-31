@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { cx, metricLabel, metricValue, panel } from "../lib/ui";
 
 type HealthStatus = Awaited<ReturnType<Awaited<ReturnType<typeof api.api.health.$get>>["json"]>>;
 
@@ -30,28 +31,28 @@ export function ApiStatusPanel() {
   }, []);
 
   return (
-    <section className="status-panel" aria-label="API status">
-      <div>
-        <span className={health?.ok ? "status-dot online" : "status-dot"} />
+    <section className={cx(panel, "relative p-5")} aria-label="API status">
+      <div className="mb-4 flex items-center gap-2">
+        <span className={cx("inline-block size-3 rounded-full", health?.ok ? "bg-[#75e2be]" : "bg-[#ef5c6b]")} />
         <strong>{health?.ok ? "API online" : "API pending"}</strong>
       </div>
       {health ? (
-        <dl>
+        <dl className="m-0 grid gap-3">
           <div>
-            <dt>SQLite rows</dt>
-            <dd>{health.database.leaderboardEntries}</dd>
+            <dt className={metricLabel}>SQLite rows</dt>
+            <dd className={metricValue}>{health.database.leaderboardEntries}</dd>
           </div>
           <div>
-            <dt>Hono WS</dt>
-            <dd>{health.realtime.honoWebSocket}</dd>
+            <dt className={metricLabel}>Hono WS</dt>
+            <dd className={metricValue}>{health.realtime.honoWebSocket}</dd>
           </div>
           <div>
-            <dt>Socket.IO</dt>
-            <dd>{health.realtime.socketIo}</dd>
+            <dt className={metricLabel}>Socket.IO</dt>
+            <dd className={metricValue}>{health.realtime.socketIo}</dd>
           </div>
         </dl>
       ) : (
-        <p>{error ?? "Checking local server"}</p>
+        <p className="m-0">{error ?? "Checking local server"}</p>
       )}
     </section>
   );

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { starterPoses } from "@quackhacks/shared";
 import { AthleteStage } from "../components/AthleteStage";
 import { DummySplash } from "../components/DummySplash";
+import { secondaryAction } from "../lib/ui";
 
 const DUMMY_SPLASH_SEEN_KEY = "quackhacks:dummy:splashSeen";
 
@@ -26,8 +27,8 @@ export function PoseTestPage() {
   return (
     <>
       {showSplash ? <DummySplash onDismiss={dismissSplash} /> : null}
-      <div style={{ position: "absolute", top: "4.5rem", right: "1rem", zIndex: 10 }}>
-        <button className="secondary-action" type="button" onClick={() => setShowSplash(true)}>
+      <div className="absolute top-18 right-4 z-10">
+        <button className={secondaryAction} type="button" onClick={() => setShowSplash(true)}>
           Replay Intro
         </button>
       </div>

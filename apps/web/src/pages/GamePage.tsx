@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { canvasStage, eyebrow, pageGrid, pageTitle, primaryAction, secondaryAction, splitLayout, toolPanel } from "../lib/ui";
 
 export function GamePage() {
   const canvasMountRef = useRef<HTMLDivElement>(null);
@@ -48,19 +49,19 @@ export function GamePage() {
   }, []);
 
   return (
-    <section className="page-grid">
-      <div className="page-heading">
-        <p className="eyebrow">Temp game route</p>
-        <h1>Game Shell</h1>
+    <section className={pageGrid}>
+      <div>
+        <p className={eyebrow}>Temp game route</p>
+        <h1 className={pageTitle}>Game Shell</h1>
       </div>
-      <div className="game-layout">
-        <div className="canvas-stage" ref={canvasMountRef} />
-        <aside className="tool-panel">
-          <h2>Debug Screens</h2>
-          <Link className="primary-action" to="/saboteur">
+      <div className={splitLayout}>
+        <div className={canvasStage} ref={canvasMountRef} />
+        <aside className={toolPanel}>
+          <h2 className="m-0 text-lg font-bold">Debug Screens</h2>
+          <Link className={primaryAction} to="/saboteur">
             Saboteur Option
           </Link>
-          <Link className="secondary-action" to="/score">
+          <Link className={secondaryAction} to="/score">
             Score Page
           </Link>
         </aside>

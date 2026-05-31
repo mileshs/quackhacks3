@@ -7,6 +7,7 @@ import { PoseTestPage } from "./pages/PoseTestPage";
 import { SaboteurPage } from "./pages/SaboteurPage";
 import { ScorePage } from "./pages/ScorePage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { appShell, brand, navLink, navList, topbar } from "./lib/ui";
 
 const navItems = [
   { to: "/", label: "Home" },
@@ -20,14 +21,14 @@ const navItems = [
 export function App() {
   return (
     <>
-      <div className="app-shell">
-        <header className="topbar">
-          <NavLink className="brand" to="/">
+      <div className={appShell}>
+        <header className={topbar}>
+          <NavLink className={brand} to="/">
             QuackHacks 3
           </NavLink>
-          <nav className="nav-list" aria-label="Primary">
+          <nav className={navList} aria-label="Primary">
             {navItems.map((item) => (
-              <NavLink key={item.to} to={item.to}>
+              <NavLink className={navLink} key={item.to} to={item.to}>
                 {item.label}
               </NavLink>
             ))}
