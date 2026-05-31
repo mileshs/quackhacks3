@@ -1,6 +1,6 @@
 The following provides some info about the game we want to make. Use it as context when working on the project.
 
-Assume the dev server alr up.
+Assume the dev server alr up. If you do turn it on (because it isn't), turn it back off after your turn.
 
 ## Current Cloudflare Architecture
 
