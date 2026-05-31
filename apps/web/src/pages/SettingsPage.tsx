@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioVolumeControls } from "../components/AudioVolumeControls";
-import { AUDIO_ASSETS, getBeatAtTime, getBpmAtTime, startTimeWarp } from "../lib/audioEngine";
+import { applyNeutralSoundtrackPlayback, AUDIO_ASSETS, getBeatAtTime, getBpmAtTime, startTimeWarp } from "../lib/audioEngine";
 import { useSound } from "../providers/SoundProvider";
 import { cx, eyebrow, pageGrid, pageTitle, primaryAction, secondaryAction } from "../lib/ui";
 
@@ -17,6 +17,7 @@ export function SettingsPage() {
   useEffect(() => {
     audioRef.current = new Audio(TEST_SOUND_PATH);
     soundtrackRef.current = new Audio(AUDIO_ASSETS.soundtrackSpeedy);
+    applyNeutralSoundtrackPlayback(soundtrackRef.current);
     timeWarpSfxRef.current = new Audio(AUDIO_ASSETS.timeWarp);
 
     return () => {
@@ -82,7 +83,7 @@ export function SettingsPage() {
     }
 
     soundtrackRef.current.currentTime = 0;
-    soundtrackRef.current.playbackRate = 1;
+    applyNeutralSoundtrackPlayback(soundtrackRef.current);
     soundtrackRef.current.play().catch((err) => {
       console.warn("Soundtrack playback blocked or failed:", err);
     });

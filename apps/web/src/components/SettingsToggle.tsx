@@ -1,4 +1,3 @@
-import { Switch } from "@base-ui/react/switch";
 import { cx } from "../lib/ui";
 
 type SettingsToggleProps = {
@@ -37,21 +36,26 @@ export function SettingsToggle({
           </p>
         ) : null}
       </div>
-      <Switch.Root
+      <button
         id={id}
-        checked={checked}
-        onCheckedChange={onCheckedChange}
+        type="button"
+        role="switch"
+        aria-checked={checked}
         aria-describedby={descriptionId}
-        nativeButton
-        render={<button type="button" />}
         className={cx(
-          "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-0 bg-[#d8cdb5] p-0.5 shadow-[inset_0_1px_2px_rgba(80,55,0,0.22)] outline-none transition-colors duration-150 ease-out",
-          "data-[checked]:bg-[#2fb86b] data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
-          "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#2b303b]"
+          "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-0 p-0.5 shadow-[inset_0_1px_2px_rgba(80,55,0,0.22)] outline-none transition-colors duration-150 ease-out",
+          "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#2b303b]",
+          checked ? "bg-[#2fb86b]" : "bg-[#d8cdb5]"
         )}
+        onClick={() => onCheckedChange(!checked)}
       >
-        <Switch.Thumb className="pointer-events-none block size-6 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.22),0_3px_8px_rgba(0,0,0,0.18)] transition-transform duration-150 ease-out data-[checked]:translate-x-5" />
-      </Switch.Root>
+        <span
+          className={cx(
+            "pointer-events-none block size-6 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.22),0_3px_8px_rgba(0,0,0,0.18)] transition-transform duration-150 ease-out",
+            checked ? "translate-x-5" : "translate-x-0"
+          )}
+        />
+      </button>
     </section>
   );
 }

@@ -115,17 +115,79 @@ export function getBeatAtTime(seconds: number, totalSeconds: number): number {
   return beats;
 }
 
+export function getTotalSoundtrackBeats(): number {
+  return SOUNDTRACK_TEMPO.segmentCount * SOUNDTRACK_TEMPO.beatsPerSegment;
+}
+
+export function getSegmentIndexAtBeat(beat: number): number {
+  const index = Math.floor(beat / SOUNDTRACK_TEMPO.beatsPerSegment);
+  return Math.min(Math.max(0, index), SOUNDTRACK_TEMPO.segmentCount - 1);
+}
+
+export function isSoundtrackComplete(beat: number): boolean {
+  return beat >= getTotalSoundtrackBeats();
+}
+
+/** Inverse of `getBeatAtTime` for seek sync and wall-clock fallback. */
+export function getSecondsAtBeat(beat: number, totalSeconds: number): number {
+  const totalBeats = getTotalSoundtrackBeats();
+
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return 0;
+  }
+
+  if (beat <= 0) {
+    return 0;
+  }
+
+  if (beat >= totalBeats) {
+    return totalSeconds;
+  }
+
+  const weights = segmentWeights();
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+  const segmentIndex = Math.min(
+    Math.floor(beat / SOUNDTRACK_TEMPO.beatsPerSegment),
+    SOUNDTRACK_TEMPO.segmentCount - 1
+  );
+
+  let elapsed = 0;
+  for (let i = 0; i < segmentIndex; i += 1) {
+    elapsed += totalSeconds * (weights[i] / weightSum);
+  }
+
+  const segmentSeconds = totalSeconds * (weights[segmentIndex] / weightSum);
+  const beatInSegment = beat - segmentIndex * SOUNDTRACK_TEMPO.beatsPerSegment;
+  return elapsed + (beatInSegment / SOUNDTRACK_TEMPO.beatsPerSegment) * segmentSeconds;
+}
+
+// preservesPitch is standard but still prefixed in some engines.
+function setPreservesPitch(track: HTMLAudioElement, value: boolean): void {
+  const el = track as HTMLAudioElement & {
+    mozPreservesPitch?: boolean;
+    webkitPreservesPitch?: boolean;
+  };
+  el.preservesPitch = value;
+  el.mozPreservesPitch = value;
+  el.webkitPreservesPitch = value;
+}
+
+/** 1x playback with original pitch (no time-stretch / pitch shift). */
+export function applyNeutralSoundtrackPlayback(track: HTMLAudioElement): void {
+  track.playbackRate = 1;
+  setPreservesPitch(track, true);
+}
+
 // --- Time Warp ---
 // time_warp.mp3 was recorded as `durationBeats` beats at `sfxBaseBpm`. On
-// trigger it is rate-scaled by currentBpm / sfxBaseBpm, so it always lasts
-// `durationBeats` beats at the song's current tempo. The song's slow/pitch-down
-// runs for exactly as long as the (rate-scaled) SFX plays.
+// trigger it is rate-scaled by currentBpm / sfxBaseBpm. The song slows via
+// playbackRate while preservePitchDuringWarp keeps the soundtrack's pitch intact.
 export const TIME_WARP = {
   durationBeats: 3,
   sfxBaseBpm: 140,
   sfxBaseSeconds: 2.638, // measured fallback if the SFX element's duration is unavailable
   songPlaybackRate: 0.5,
-  preservePitchDuringWarp: false, // false => the song pitches down as it slows
+  preservePitchDuringWarp: true,
   preserveSfxPitch: false, // false => the SFX pitches with its speed change
   sfxVolumeScale: 0.5,
 };
@@ -160,8 +222,7 @@ export function startTimeWarp(
   soundtrack.playbackRate = TIME_WARP.songPlaybackRate;
 
   const restore = () => {
-    soundtrack.playbackRate = 1;
-    setPreservesPitch(soundtrack, true);
+    applyNeutralSoundtrackPlayback(soundtrack);
   };
 
   const timeoutId = window.setTimeout(restore, warpDurationMs);
@@ -170,15 +231,4 @@ export function startTimeWarp(
     window.clearTimeout(timeoutId);
     restore();
   };
-}
-
-// preservesPitch is standard but still prefixed in some engines.
-function setPreservesPitch(track: HTMLAudioElement, value: boolean): void {
-  const el = track as HTMLAudioElement & {
-    mozPreservesPitch?: boolean;
-    webkitPreservesPitch?: boolean;
-  };
-  el.preservesPitch = value;
-  el.mozPreservesPitch = value;
-  el.webkitPreservesPitch = value;
 }

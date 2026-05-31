@@ -100,6 +100,7 @@ export function useActiveGame() {
     lastPowerup,
     startGame: useCallback(() => send({ type: "game:start" }), [send]),
     endGame: useCallback(() => send({ type: "game:end" }), [send]),
+    completeGame: useCallback(() => send({ type: "game:complete" }), [send]),
     devStartGame: useCallback(() => send({ type: "game:dev-start" }), [send]),
     claimRole: useCallback((role: GameRole) => send({ type: "role:claim", role }), [send]),
     sendRoleHeartbeat: useCallback((role: GameRole) => send({ type: "role:heartbeat", role }), [send]),

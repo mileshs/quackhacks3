@@ -41,7 +41,7 @@ import {
   saboteurViewport
 } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
-import { useTempo } from "../lib/tempo";
+import { useGameTempo } from "../lib/tempo";
 
 const JOINT_HANDLE_RADIUS = 10;
 
@@ -219,7 +219,7 @@ export function SaboteurPage() {
   const { connectionStatus, game, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
   // Saboteur-only queue of poses to feed the dummy, one per 8-count cycle.
   const [queue, setQueue] = useState<UniversalPose[]>([]);
-  const tempo = useTempo(game?.playingStartedAt ?? null);
+  const tempo = useGameTempo();
   const lastFedCycleRef = useRef<number | null>(null);
   const [showSplash, setShowSplash] = useState(true);
   const [tutorialRun, setTutorialRun] = useState(0);
