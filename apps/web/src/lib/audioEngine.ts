@@ -4,8 +4,10 @@ export const SOUNDTRACK_ASSETS = {
 } as const;
 
 export const SOUND_EFFECT_ASSETS = {
+  boo: "/assets/boo.mp3",
   bruh: "/assets/bruh.mp3",
   buttonClick: "/assets/button_click.mp3",
+  cheer: "/assets/cheer.mp3",
   countdown: "/assets/countdown.mp3",
   death: "/assets/death.mp3",
   excellent: "/assets/excellent.mp3",
