@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GameRole, starterPoses, type UniversalPose } from "@quackhacks/shared";
 import { useNavigate } from "react-router-dom";
 import { AthleteStage } from "../components/AthleteStage";
 import { DummySplash } from "../components/DummySplash";
 import { RoleGameShell } from "../components/RoleGameShell";
+import { showGameNotice } from "../lib/gameNotifications";
+import {
+  appendCaptureFrame,
+  buildScorePath,
+  readRememberedCaptureSession,
+  rememberCaptureSession,
+  resetCaptureSessionKey,
+  resolveCaptureSessionKey
+} from "../lib/gameCapture";
+import type { GameCaptureImages } from "../lib/gameCapture";
 import { loadSavedPoses } from "../lib/savedPoses";
 import { secondaryAction } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
@@ -16,6 +26,14 @@ export function PoseTestPage() {
   const gameControls = useActiveGame();
   const { game, lastPose, lastPowerup, sendRoundSnapshot, defeatGame } = gameControls;
   const [showSplash, setShowSplash] = useState(true);
+  const roundIndexRef = useRef(0);
+
+  const gameSessionKey = game?.gameId ?? game?.playingStartedAt ?? null;
+
+  useEffect(() => {
+    roundIndexRef.current = 0;
+    resetCaptureSessionKey(gameSessionKey);
+  }, [gameSessionKey]);
 
   useEffect(() => {
     const refresh = () => setSavedPoses(loadSavedPoses());
@@ -51,14 +69,48 @@ export function PoseTestPage() {
 
   const showIntro = useCallback(() => setShowSplash(true), []);
 
+  const persistCapture = useCallback(
+    (capture: GameCaptureImages) => {
+      const key = resolveCaptureSessionKey(game?.gameId, game?.playingStartedAt);
+      roundIndexRef.current += 1;
+      rememberCaptureSession(key);
+      appendCaptureFrame(key, roundIndexRef.current, capture);
+      return key;
+    },
+    [game?.gameId, game?.playingStartedAt]
+  );
+
+  const handleRoundCapture = useCallback(
+    (capture: GameCaptureImages) => {
+      persistCapture(capture);
+    },
+    [persistCapture]
+  );
+
+  const handleCaptureShot = useCallback(
+    (capture: GameCaptureImages) => {
+      persistCapture(capture);
+      showGameNotice("Capture saved. Use Dev → I Won to preview on the score screen.");
+    },
+    [persistCapture]
+  );
+
   const handleAllLivesLost = useCallback(() => {
+    const key =
+      resolveCaptureSessionKey(game?.gameId, game?.playingStartedAt) ??
+      readRememberedCaptureSession();
+
+    if (key) {
+      rememberCaptureSession(key);
+    }
+
     if (game?.activeGame) {
       defeatGame();
       return;
     }
 
-    navigate("/score?winner=saboteur");
-  }, [defeatGame, game?.activeGame, navigate]);
+    navigate(buildScorePath("saboteur", key ?? undefined));
+  }, [defeatGame, game?.activeGame, game?.gameId, game?.playingStartedAt, navigate]);
 
   return (
     <>
@@ -79,6 +131,9 @@ export function PoseTestPage() {
           onFinishWall={sendRoundSnapshot}
           playingSessionKey={game?.playingStartedAt ?? null}
           onAllLivesLost={handleAllLivesLost}
+          onRoundCapture={handleRoundCapture}
+          capturePosePool={poseOptions}
+          onCaptureShot={handleCaptureShot}
         />
       </RoleGameShell>
     </>

@@ -10,6 +10,17 @@
 @theme {
   --animate-winner-pulse: winner-pulse 2s ease-in-out infinite;
   --animate-winner-pulse-dark: winner-pulse-dark 2s ease-in-out infinite;
+  --animate-capture-marquee: capture-marquee 36s linear infinite;
+
+  @keyframes capture-marquee {
+    from {
+      transform: translateX(0);
+    }
+
+    to {
+      transform: translateX(-50%);
+    }
+  }
 
   @keyframes winner-pulse {
     0%,

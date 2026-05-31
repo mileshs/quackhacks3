@@ -1,3 +1,4 @@
+export * from "./gameCaptures.js";
 export * from "./powerups.js";
 export * from "./figure.js";
 export * from "./holes.js";

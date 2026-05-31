@@ -11,6 +11,8 @@ import {
   type FinalStat,
   type FinalWinner
 } from "../lib/finalScreen";
+import { loadCaptureGallery, readCachedGallery } from "../lib/gameCapture";
+import type { GameCaptureFrame, GameCaptureGallery } from "@quackhacks/shared";
 import { cx } from "../lib/ui";
 
 type FinalSide = "dummy" | "saboteur";
@@ -183,6 +185,102 @@ function StatGrid({ side, dark }: { side: FinalSide; dark: boolean }) {
   );
 }
 
+function CaptureFrameCard({ frame, dark }: { frame: GameCaptureFrame; dark: boolean }) {
+  const matchColor = frame.matchPercent >= 70 ? "#2fb86b" : frame.matchPercent >= 50 ? "#f0a52e" : "#ef5c6b";
+
+  return (
+    <figure
+      className={cx(
+        "group relative w-[clamp(9rem,18vw,12rem)] shrink-0 overflow-hidden rounded-[0.85rem] border-[3px] shadow-[inset_0_2px_0_rgba(255,255,255,0.45),0_8px_20px_rgba(0,0,0,0.2)] transition-transform duration-200 hover:scale-[1.03]",
+        dark ? "border-[#3a3634] bg-[#1a1816]" : "border-[#f0d9a8] bg-[#fff8eb]"
+      )}
+    >
+      <div className="relative aspect-video w-full">
+        <img
+          alt={`Webcam snapshot for ${frame.poseName}`}
+          className="absolute inset-0 size-full object-cover transition-opacity duration-200 group-hover:opacity-0"
+          src={frame.snapshotDataUrl}
+        />
+        <img
+          alt={`In-game screenshot for ${frame.poseName}`}
+          className="absolute inset-0 size-full object-cover opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+          src={frame.screenshotDataUrl}
+        />
+      </div>
+      <figcaption
+        className={cx(
+          "flex items-center justify-between gap-2 px-2.5 py-1.5 text-[clamp(0.62rem,1vh,0.75rem)] font-extrabold uppercase",
+          dark ? "text-[#e8e4df]" : "text-[#28303d]"
+        )}
+      >
+        <span className="truncate">#{frame.roundIndex}</span>
+        <span style={{ color: matchColor }}>{Math.round(frame.matchPercent)}%</span>
+      </figcaption>
+    </figure>
+  );
+}
+
+function GameCaptureGallery({
+  gallery,
+  dark,
+  loading
+}: {
+  gallery: GameCaptureGallery | null;
+  dark: boolean;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div
+        className={cx(
+          "rounded-[1.2rem] px-4 py-4 text-center text-sm font-bold",
+          dark ? "bg-[#2a2624]/80 text-[#b8b0a8]" : "bg-[#fff4df]/85 text-[#6c6353]"
+        )}
+      >
+        Loading captures…
+      </div>
+    );
+  }
+
+  if (!gallery || gallery.frames.length === 0) {
+    return null;
+  }
+
+  const frames = gallery.frames;
+  const marqueeFrames = frames.length > 2 ? [...frames, ...frames] : frames;
+  const shouldAnimate = frames.length > 2;
+
+  return (
+    <section aria-label="Pose capture gallery">
+      <p
+        className={cx(
+          "m-0 mb-2 text-center text-[clamp(0.68rem,1.2vh,0.8rem)] font-extrabold uppercase tracking-[0.16em]",
+          dark ? "text-[#b8b0a8]" : "text-[#6c6353]"
+        )}
+      >
+        Pose gallery · {frames.length} shot{frames.length === 1 ? "" : "s"} · hover for in-game view
+      </p>
+      <div
+        className={cx(
+          "overflow-x-auto overflow-y-hidden rounded-[1.1rem] py-2",
+          dark ? "bg-[#2a2624]/50" : "bg-[#fff4df]/60"
+        )}
+      >
+        <div
+          className={cx(
+            "flex w-max min-w-full gap-3 px-3",
+            shouldAnimate && "motion-safe:animate-capture-marquee motion-reduce:overflow-x-auto"
+          )}
+        >
+          {marqueeFrames.map((frame, index) => (
+            <CaptureFrameCard dark={dark} frame={frame} key={`${frame.roundIndex}-${index}`} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function PlayerPanel({ side, winner, dark }: { side: FinalSide; winner: FinalWinner; dark: boolean }) {
   const isWinner = winner === side;
   const config = getSideConfig(side, dark);
@@ -231,10 +329,60 @@ function PlayerPanel({ side, winner, dark }: { side: FinalSide; winner: FinalWin
 export function FinalScreenPage() {
   const [searchParams] = useSearchParams();
   const initialWinner = searchParams.get("winner") === "saboteur" ? "saboteur" : "dummy";
+  const captureSession = searchParams.get("captureSession");
   const [winner, setWinner] = useState<FinalWinner>(initialWinner);
+  const [gallery, setGallery] = useState<GameCaptureGallery | null>(() => {
+    if (!captureSession) {
+      return null;
+    }
+    return readCachedGallery(captureSession);
+  });
+  const [galleryLoading, setGalleryLoading] = useState(() => {
+    if (!captureSession) {
+      return false;
+    }
+    return readCachedGallery(captureSession) === null;
+  });
   const { playSoundEffect } = useRoleScopedSound(readPersistedClaimedRole());
   const result = finalResultCopy[winner];
   const isDev = import.meta.env.DEV;
+
+  useEffect(() => {
+    if (!captureSession) {
+      setGallery(null);
+      setGalleryLoading(false);
+      return;
+    }
+
+    const cached = readCachedGallery(captureSession);
+    if (cached) {
+      setGallery(cached);
+    }
+
+    let active = true;
+    setGalleryLoading(!cached);
+
+    void loadCaptureGallery(captureSession)
+      .then((loaded) => {
+        if (active && loaded) {
+          setGallery(loaded);
+        }
+      })
+      .catch(() => {
+        if (active && !cached) {
+          setGallery(null);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setGalleryLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [captureSession]);
 
   useEffect(() => {
     playSoundEffect(winner === "dummy" ? "cheer" : "boo");
@@ -283,12 +431,16 @@ export function FinalScreenPage() {
         </p>
       </header>
 
-      <div className="absolute left-1/2 top-1/2 z-[2] w-[min(68rem,calc(100%-clamp(2rem,6vw,4rem)))] -translate-x-1/2 -translate-y-[calc(50%+clamp(1.25rem,3.5vh,2.75rem))] grid grid-cols-2 gap-[clamp(0.85rem,2.5vw,1.75rem)]">
+      <div className="absolute left-1/2 top-[34%] z-[2] w-[min(68rem,calc(100%-clamp(2rem,6vw,4rem)))] -translate-x-1/2 -translate-y-1/2 grid grid-cols-2 gap-[clamp(0.85rem,2.5vw,1.75rem)]">
         <PlayerPanel side="dummy" winner={winner} dark={saboteurWon} />
         <PlayerPanel side="saboteur" winner={winner} dark={saboteurWon} />
       </div>
 
-      <div className="relative z-[2] mt-auto flex shrink-0 flex-wrap items-center justify-center gap-[clamp(0.6rem,1.6vh,1rem)]">
+      <div className="relative z-[2] mx-auto mt-auto mb-[clamp(0.5rem,1.5vh,1rem)] w-[min(68rem,calc(100%-clamp(2rem,6vw,4rem)))] px-1">
+        <GameCaptureGallery dark={saboteurWon} gallery={gallery} loading={galleryLoading} />
+      </div>
+
+      <div className="relative z-[2] flex shrink-0 flex-wrap items-center justify-center gap-[clamp(0.6rem,1.6vh,1rem)] pb-1">
         <Link
           className={cx(
             "inline-flex min-h-[3.25rem] items-center justify-center rounded-[1.3rem] px-8 text-[clamp(1rem,1.6vw,1.25rem)] font-black uppercase tracking-normal no-underline transition duration-200 active:translate-y-1",
