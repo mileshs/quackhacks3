@@ -7,6 +7,7 @@ import { PoseTestPage } from "./pages/PoseTestPage";
 import { SaboteurPage } from "./pages/SaboteurPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ChromeContext } from "./lib/chrome";
+import { SettingsMenu } from "./components/SettingsMenu";
 import { appShell, brand, navLink, navList, topbar } from "./lib/ui";
 
 const navItems = [
@@ -50,6 +51,8 @@ export function App() {
           </Routes>
         </main>
       </div>
+      {/* Persistent Settings control — floats top-right on every screen. */}
+      <SettingsMenu />
       {DevAgentation ? (
         <Suspense fallback={null}>
           <DevAgentation />

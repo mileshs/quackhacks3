@@ -25,10 +25,10 @@ import { SaboteurToolbar } from "../components/SaboteurToolbar";
 import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
+import { useDevSection, useSettings } from "../lib/settings";
 import { SKELETON_ADJUSTMENT_SOUNDS, useSound } from "../providers/SoundProvider";
 import {
   cx,
-  pillDanger,
   saboteurCard,
   saboteurJointHandleClass,
   saboteurPageBg,
@@ -160,14 +160,6 @@ const jointRotationLimits: Partial<Record<JointName, JointRotationLimit>> = {
   rightAnkle: { centerDegrees: 90, radiusDegrees: 95 }
 };
 
-function HamburgerIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-      <path d="M4 6h16M4 12h16M4 18h16" />
-    </svg>
-  );
-}
-
 /**
  * A transient error toast pinned to the top-left of the stage. It fades in on mount,
  * holds, then fades out and clears itself a few seconds later — so a failed save no
@@ -206,9 +198,12 @@ function SaveErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
 
 export function SaboteurPage() {
   const { setNavHidden } = useChrome();
-  // Dev mode reveals the developer-only chrome: the global navbar, the "Your Progress"
-  // tracker, and the reward simulator buttons. Off by default for a clean player view.
-  const [devMode, setDevMode] = useState(false);
+  // Dev mode (from the global Settings menu) reveals the developer-only chrome: the
+  // "Your Progress" tracker, reward simulator buttons, connection status, and a toggle for
+  // the global navbar. Off by default for a clean player view.
+  const { devMode } = useSettings();
+  // The global navbar is hidden on this page; the dev "Show navbar" toggle controls it.
+  const [showNavbar, setShowNavbar] = useState(false);
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
@@ -239,11 +234,34 @@ export function SaboteurPage() {
     }
   }
 
-  // The navbar is hidden on this page unless dev mode is on; restore it on unmount.
+  // The navbar is hidden on this page unless the dev toggle turns it on; restore it on unmount.
   useEffect(() => {
-    setNavHidden(!devMode);
+    setNavHidden(!showNavbar);
     return () => setNavHidden(false);
-  }, [devMode, setNavHidden]);
+  }, [showNavbar, setNavHidden]);
+
+  // Saboteur dev controls live in the global Settings menu (under Dev Mode).
+  const saboteurDevSection = useMemo(
+    () => (
+      <div className="flex flex-col gap-2">
+        <span className="text-[11px] font-extrabold tracking-[0.12em] text-[#a89a82] uppercase">Saboteur</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={showNavbar}
+          onClick={() => setShowNavbar((on) => !on)}
+          className="flex items-center justify-between rounded-[12px] bg-white px-3 py-2.5 text-sm font-extrabold text-[#2b303b] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]"
+        >
+          Show navbar
+          <span className={cx("ml-3 rounded-full px-2 py-0.5 text-xs font-black", showNavbar ? "bg-[#2fb86b] text-white" : "bg-[#d8cdb5] text-[#5b5446]")}>
+            {showNavbar ? "On" : "Off"}
+          </span>
+        </button>
+      </div>
+    ),
+    [showNavbar]
+  );
+  useDevSection("saboteur", saboteurDevSection);
 
   useEffect(() => {
     persistSavedPoses(savedPoses);
@@ -475,21 +493,6 @@ export function SaboteurPage() {
         </div>
 
         <aside className="flex min-h-0 flex-1 flex-col gap-3">
-          <button
-            type="button"
-            className={cx(
-              devMode ? pillDanger : saboteurPillSecondary,
-              "w-full px-4 py-2.5 text-[13px]"
-            )}
-            aria-pressed={devMode}
-            onClick={() => setDevMode((on) => !on)}
-          >
-            <span className="inline-flex w-full items-center justify-center gap-2">
-              <HamburgerIcon />
-              Controls
-            </span>
-          </button>
-
           <SaboteurDeckPanel
             poses={poseList}
             selectedIndex={poseIndex}
