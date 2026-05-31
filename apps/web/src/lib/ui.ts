@@ -59,6 +59,25 @@ export const limbLine = "stroke-[#f6f4ea] stroke-[10]";
 
 export const jointDot = "fill-[#ef5c6b] stroke-[#101720] stroke-[3]";
 
+export const saboteurStage = "w-full max-w-full aspect-[800/480] max-h-[min(68vh,640px)]";
+
+export const saboteurViewport = cx("block w-full bg-transparent", saboteurStage);
+
+export function saboteurJointHandleClass(active: boolean) {
+  return cx(
+    "cursor-grab stroke-none",
+    active ? "cursor-grabbing fill-[rgba(15,32,80,0.55)]" : "fill-[rgba(15,32,80,0.3)]"
+  );
+}
+
+export const saboteurStageBoundsRect =
+  "fill-none stroke-[rgba(239,92,107,0.42)] [stroke-width:2.5] [stroke-dasharray:12_9]";
+
+export const saboteurStageFloorLine = "stroke-[#ef5c6b] [stroke-width:5] [stroke-linecap:round]";
+
+export const saboteurTorsoHandleIcon =
+  "fill-none stroke-[#ffd24a] [stroke-width:3] [stroke-linecap:round] [stroke-linejoin:round]";
+
 export const metricLabel = "text-sm text-[#aebbb8]";
 
 export const metricValue = "m-0 font-extrabold";

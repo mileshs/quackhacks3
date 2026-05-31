@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   BLOB_COLOR,
+  DEFAULT_POWERUP_DURATION_MS,
   HOLE_PADDING,
   buildBlobFigure,
   comparePoses,
@@ -10,6 +11,7 @@ import {
   scoreBandFromMatch,
   universalHumanSize,
   type FigurePrimitive,
+  type SaboteurPowerupKind,
   type ScoreBand,
   type UniversalPose
 } from "@quackhacks/shared";
@@ -19,6 +21,7 @@ import {
   startPoseLoop,
   type PoseFrame
 } from "../lib/poseTracker";
+import { createSocketConnection } from "../lib/realtime";
 import { cx, largeStatus, primaryAction, secondaryAction } from "../lib/ui";
 
 type AthleteStageProps = {
@@ -217,11 +220,23 @@ export function AthleteStage({
   const [showDummy, setShowDummy] = useState(true);
   const [handStates, setHandStates] = useState<boolean[]>([]);
   const [guidance, setGuidance] = useState<string | null>(null);
+  const [activePowerup, setActivePowerup] = useState<SaboteurPowerupKind | null>(null);
+  const [spotlightPct, setSpotlightPct] = useState({ x: 50, y: 55 });
   const lastHandUpdate = useRef(0);
+  const lastSpotlightUpdate = useRef(0);
+  const powerupTimerRef = useRef<number | null>(null);
+  const socketRef = useRef<ReturnType<typeof createSocketConnection> | null>(null);
+  const matchPercentRef = useRef(0);
+  const bandRef = useRef<ScoreBand>("CRASH");
+  matchPercentRef.current = matchPercent;
+  bandRef.current = band;
 
   // The render loop reads this through a ref so toggling doesn't rebuild the loop.
   const showDummyRef = useRef(showDummy);
   showDummyRef.current = showDummy;
+
+  const activePowerupRef = useRef(activePowerup);
+  activePowerupRef.current = activePowerup;
 
   const stop = useCallback(() => {
     const wasActive = Boolean(stopLoopRef.current || streamRef.current);
@@ -238,6 +253,35 @@ export function AthleteStage({
   }, []);
 
   useEffect(() => stop, [stop]);
+
+  useEffect(() => {
+    const socket = createSocketConnection();
+    socketRef.current = socket;
+
+    socket.on("powerup:activate", (payload: { kind: SaboteurPowerupKind; durationMs?: number }) => {
+      const duration = payload.durationMs ?? DEFAULT_POWERUP_DURATION_MS;
+      setActivePowerup(payload.kind);
+      if (powerupTimerRef.current) {
+        window.clearTimeout(powerupTimerRef.current);
+      }
+      powerupTimerRef.current = window.setTimeout(() => setActivePowerup(null), duration);
+    });
+
+    return () => {
+      socket.disconnect();
+      if (powerupTimerRef.current) {
+        window.clearTimeout(powerupTimerRef.current);
+      }
+    };
+  }, []);
+
+  function finishWall() {
+    socketRef.current?.emit("round:snapshot", {
+      matchPercent: matchPercentRef.current,
+      band: bandRef.current,
+      sentAt: new Date().toISOString()
+    });
+  }
 
   // Preview the target hole on a black backdrop whenever it changes while paused, so
   // the saboteur's edits are visible before the camera is even running.
@@ -346,6 +390,14 @@ export function AthleteStage({
             setMatchPercent(percent);
             setBand(scoreBandFromMatch(percent));
           }
+
+          if (activePowerupRef.current === "blindness" && lHip && rHip && now - lastSpotlightUpdate.current > 50) {
+            lastSpotlightUpdate.current = now;
+            setSpotlightPct({
+              x: (1 - (lHip.x + rHip.x) / 2) * 100,
+              y: ((lHip.y + rHip.y) / 2) * 100
+            });
+          }
         },
         handLandmarker
       );
@@ -358,7 +410,24 @@ export function AthleteStage({
   return (
     <div className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
       <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
-      <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
+      <div className={cx("relative h-full w-full", activePowerup === "mirror" && "scale-x-[-1]")}>
+        <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
+      </div>
+
+      {activePowerup === "blindness" ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-45"
+          style={{
+            background: `radial-gradient(circle 130px at ${spotlightPct.x}% ${spotlightPct.y}%, transparent 0%, transparent 42%, rgba(0,0,0,0.88) 62%, #000 100%)`
+          }}
+        />
+      ) : null}
+
+      {activePowerup === "mirror" ? (
+        <div className="absolute top-6 left-1/2 z-46 -translate-x-1/2 rounded-full border border-[#64b4ff]/50 bg-[#64b4ff]/20 px-3 py-1 text-xs font-extrabold tracking-widest text-white uppercase">
+          Mirror Mode
+        </div>
+      ) : null}
 
       {/* Big accuracy/score bar down the side of the screen. */}
       <div
@@ -462,6 +531,9 @@ export function AthleteStage({
             onClick={() => setShowDummy((on) => !on)}
           >
             Dummy Overlay: {showDummy ? "On" : "Off"}
+          </button>
+          <button className={secondaryAction} type="button" onClick={finishWall}>
+            Finish Wall
           </button>
           <button
             className={secondaryAction}

@@ -60,6 +60,20 @@ io.on("connection", (socket) => {
       sentAt: new Date().toISOString()
     });
   });
+
+  socket.on("round:snapshot", (payload) => {
+    socket.broadcast.emit("round:snapshot", {
+      ...payload,
+      sentAt: payload.sentAt ?? new Date().toISOString()
+    });
+  });
+
+  socket.on("powerup:activate", (payload) => {
+    socket.broadcast.emit("powerup:activate", {
+      ...payload,
+      sentAt: payload.sentAt ?? new Date().toISOString()
+    });
+  });
 });
 
 console.log(`QuackHacks API listening on http://localhost:${port}`);

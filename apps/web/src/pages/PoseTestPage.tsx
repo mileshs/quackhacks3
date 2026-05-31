@@ -3,12 +3,14 @@ import { starterPoses, type UniversalPose } from "@quackhacks/shared";
 import { AthleteStage } from "../components/AthleteStage";
 import { DummySplash } from "../components/DummySplash";
 import { loadSavedPoses } from "../lib/savedPoses";
+import { createSocketConnection } from "../lib/realtime";
 import { secondaryAction } from "../lib/ui";
 
 const DUMMY_SPLASH_SEEN_KEY = "quackhacks:dummy:splashSeen";
 
 export function PoseTestPage() {
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
+  const [previewPose, setPreviewPose] = useState<UniversalPose | null>(null);
   const [selectedId, setSelectedId] = useState(starterPoses[0]?.id ?? "");
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
@@ -27,8 +29,30 @@ export function PoseTestPage() {
     };
   }, []);
 
-  const poseOptions = useMemo(() => [...starterPoses, ...savedPoses], [savedPoses]);
-  const targetPose = poseOptions.find((pose) => pose.id === selectedId) ?? poseOptions[0] ?? starterPoses[0];
+  useEffect(() => {
+    const socket = createSocketConnection();
+
+    socket.on("pose:preview", (payload: { pose: UniversalPose } | UniversalPose) => {
+      const pose = typeof payload === "object" && payload && "pose" in payload ? payload.pose : (payload as UniversalPose);
+      if (pose?.joints) {
+        setPreviewPose(pose);
+        setSelectedId(pose.id);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  const poseOptions = useMemo(() => {
+    const base = [...starterPoses, ...savedPoses];
+    if (previewPose && !base.some((pose) => pose.id === previewPose.id)) {
+      return [...base, previewPose];
+    }
+    return base;
+  }, [savedPoses, previewPose]);
+  const targetPose = previewPose ?? poseOptions.find((pose) => pose.id === selectedId) ?? poseOptions[0] ?? starterPoses[0];
 
   function dismissSplash() {
     setShowSplash(false);

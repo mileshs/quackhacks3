@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 type SaboteurSplashProps = {
   onDismiss: () => void;
 };
@@ -19,7 +21,11 @@ export function SaboteurSplash({ onDismiss }: SaboteurSplashProps) {
 
       <h1 className="sabotage-title" data-text={TITLE}>
         {TITLE.split("").map((letter, index) => (
-          <span key={`${letter}-${index}`} style={{ animationDelay: `${index * 0.06}s` }}>
+          <span
+            key={`${letter}-${index}`}
+            className="[animation-delay:var(--sabotage-letter-delay)]"
+            style={{ "--sabotage-letter-delay": `${index * 0.06}s` } as CSSProperties}
+          >
             {letter}
           </span>
         ))}
