@@ -11,7 +11,6 @@ import { SaboteurToolButton } from "./SaboteurToolButton";
 type SaboteurToolbarProps = {
   draftActive: boolean;
   showHole: boolean;
-  saveError: string | null;
   onMakePose: () => void;
   onEditPose: () => void;
   onCancelDraft: () => void;
@@ -23,7 +22,6 @@ type SaboteurToolbarProps = {
 export function SaboteurToolbar({
   draftActive,
   showHole,
-  saveError,
   onMakePose,
   onEditPose,
   onCancelDraft,
@@ -61,12 +59,6 @@ export function SaboteurToolbar({
           <SendPoseIcon />
         </SaboteurToolButton>
       </div>
-
-      {saveError ? (
-        <p className="m-0 mt-2 rounded-[10px] bg-[#ef5c6b]/15 px-3 py-2 text-sm font-bold text-[#ff8a96]" role="alert">
-          {saveError}
-        </p>
-      ) : null}
     </div>
   );
 }
