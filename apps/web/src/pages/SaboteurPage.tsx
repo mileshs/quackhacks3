@@ -610,14 +610,22 @@ function StageBounds() {
  * — with `preserveAspectRatio="xMidYMid meet"` centering — so the 3D dummy lines up pixel
  * for pixel with the SVG joint handles / bounds overlaid on top of it.
  */
+function randomBlinkDelayMs() {
+  return 2200 + Math.random() * 4800;
+}
+
+const BLINK_CLOSE_MS = 130;
+
 function Dummy3DStage({
   pose,
   faceMode = "happy",
-  className
+  className,
+  blink = true
 }: {
   pose: UniversalPose;
   faceMode?: FaceMode;
   className?: string;
+  blink?: boolean;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   // The detect/animation loop reads the latest pose + face through refs so we never have
@@ -626,6 +634,39 @@ function Dummy3DStage({
   poseRef.current = pose;
   const faceModeRef = useRef<FaceMode>(faceMode);
   faceModeRef.current = faceMode;
+  const eyesClosedRef = useRef(false);
+
+  useEffect(() => {
+    if (!blink) {
+      eyesClosedRef.current = false;
+      return;
+    }
+
+    let blinkTimer = 0;
+    let openTimer = 0;
+
+    const scheduleBlink = () => {
+      blinkTimer = window.setTimeout(() => {
+        if (faceModeRef.current !== "squeeze") {
+          eyesClosedRef.current = true;
+          openTimer = window.setTimeout(() => {
+            eyesClosedRef.current = false;
+            scheduleBlink();
+          }, BLINK_CLOSE_MS);
+          return;
+        }
+        scheduleBlink();
+      }, randomBlinkDelayMs());
+    };
+
+    scheduleBlink();
+
+    return () => {
+      window.clearTimeout(blinkTimer);
+      window.clearTimeout(openTimer);
+      eyesClosedRef.current = false;
+    };
+  }, [blink]);
 
   useEffect(() => {
     let sketch: p5 | undefined;
@@ -679,7 +720,8 @@ function Dummy3DStage({
             s,
             width: p.width,
             height: p.height,
-            faceMode: faceModeRef.current
+            faceMode: faceModeRef.current,
+            eyesClosed: blink && eyesClosedRef.current && faceModeRef.current === "happy"
           });
         };
       }, mountRef.current);

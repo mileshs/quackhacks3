@@ -72,7 +72,8 @@ export function drawFace3D(
   p: p5,
   headCenter: ScreenPoint,
   s: number,
-  faceMode: FaceMode = "happy"
+  faceMode: FaceMode = "happy",
+  eyesClosed = false
 ) {
   p.push();
   // Sit just in front of the head's front pole (rz = 50) so features aren't occluded.
@@ -119,10 +120,18 @@ export function drawFace3D(
   }
 
   // Happy face: two eyes, an L-nose, a smile.
-  p.noStroke();
-  p.fill(FACE_COLOR);
-  p.ellipse(-16 * s, 2 * s, 12 * s, 18 * s);
-  p.ellipse(16 * s, 2 * s, 12 * s, 18 * s);
+  if (eyesClosed) {
+    p.noFill();
+    p.stroke(FACE_COLOR);
+    p.strokeWeight(3.4 * s);
+    p.line(-22 * s, 2 * s, -10 * s, 2 * s);
+    p.line(10 * s, 2 * s, 22 * s, 2 * s);
+  } else {
+    p.noStroke();
+    p.fill(FACE_COLOR);
+    p.ellipse(-16 * s, 2 * s, 12 * s, 18 * s);
+    p.ellipse(16 * s, 2 * s, 12 * s, 18 * s);
+  }
 
   // Nose: an L-shaped stroke.
   p.noFill();
@@ -161,6 +170,8 @@ export type DummyScene3DParams = {
   handClosed?: HandClosed;
   /** Face expression. Defaults to "happy". */
   faceMode?: FaceMode;
+  /** Draw happy eyes as closed horizontal lines (blink). */
+  eyesClosed?: boolean;
 };
 
 /**
@@ -170,7 +181,7 @@ export type DummyScene3DParams = {
  * coordinate mapping (`at`) and scale (`s`); this paints one frame into the p5 canvas.
  */
 export function drawDummyScene3D(p: p5, params: DummyScene3DParams) {
-  const { at, s, width, height, handClosed, faceMode = "happy" } = params;
+  const { at, s, width, height, handClosed, faceMode = "happy", eyesClosed = false } = params;
 
   const head = at("head");
   const neck = at("neck");
@@ -240,7 +251,7 @@ export function drawDummyScene3D(p: p5, params: DummyScene3DParams) {
 
   // Face on the front of the head (matches the saboteur's 2D expressions).
   if (headCenter) {
-    drawFace3D(p, headCenter, s, faceMode);
+    drawFace3D(p, headCenter, s, faceMode, eyesClosed);
   }
 
   p.pop();
