@@ -5,6 +5,8 @@ import { useSound } from "../providers/SoundProvider";
 type UseSoundtrackGameSyncOptions = {
   playing: boolean;
   playingStartedAt: string | null;
+  /** When true, only demo wall limits end the run (see `useDemoRunComplete`). */
+  demoMode?: boolean;
   onSoundtrackComplete: () => void;
 };
 
@@ -25,6 +27,7 @@ function seekToAnchor(soundtrack: HTMLAudioElement, playingStartedAt: string) {
 export function useSoundtrackGameSync({
   playing,
   playingStartedAt,
+  demoMode = false,
   onSoundtrackComplete,
 }: UseSoundtrackGameSyncOptions) {
   const { playSoundtrack, stopSoundtrack, getCurrentSoundtrack } = useSound();
@@ -59,6 +62,10 @@ export function useSoundtrackGameSync({
         return;
       }
 
+      if (demoMode) {
+        return;
+      }
+
       const beat = getBeatAtTime(soundtrack.currentTime, duration);
       if (soundtrack.ended || isSoundtrackComplete(beat)) {
         completedRef.current = true;
@@ -73,10 +80,12 @@ export function useSoundtrackGameSync({
     };
 
     const onEnded = () => {
-      if (!completedRef.current) {
-        completedRef.current = true;
-        onCompleteRef.current();
+      if (demoMode || completedRef.current) {
+        return;
       }
+
+      completedRef.current = true;
+      onCompleteRef.current();
     };
 
     soundtrack.addEventListener("loadedmetadata", onLoadedMetadata);
@@ -94,5 +103,5 @@ export function useSoundtrackGameSync({
       soundtrack.removeEventListener("ended", onEnded);
       stopSoundtrack();
     };
-  }, [playing, playingStartedAt, playSoundtrack, stopSoundtrack, getCurrentSoundtrack]);
+  }, [playing, playingStartedAt, demoMode, playSoundtrack, stopSoundtrack, getCurrentSoundtrack]);
 }

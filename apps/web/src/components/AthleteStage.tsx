@@ -23,11 +23,12 @@ import {
   startPoseLoop,
   type PoseFrame
 } from "../lib/poseTracker";
+import type { SoundEffectId } from "../lib/audioEngine";
 import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dummy3d";
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import { useDefeatSequence } from "../lib/defeatSequence";
 import { useSound } from "../providers/SoundProvider";
-import { useDevSection, useSettings } from "../lib/settings";
+import { useDevSection, useEffectiveDevGameplay, useSettings } from "../lib/settings";
 import { BEATS_PER_CYCLE, isHoleVisiblePhase, useGameTempo, type TempoState } from "../lib/tempo";
 import { cx } from "../lib/ui";
 import { SettingsToggle } from "./SettingsToggle";
@@ -138,6 +139,11 @@ type AthleteStageProps = {
 };
 
 const STARTING_LIVES = 3;
+
+const POWERUP_SFX = {
+  blindness: "blindness",
+  mirror: "mirror"
+} as const satisfies Record<SaboteurPowerupKind, SoundEffectId>;
 
 // The hole keeps a human portrait shape (not stretched to the camera's aspect): a
 // centered "doorway". HOLE_SCALE is the fraction of the frame height it occupies.
@@ -682,12 +688,10 @@ export function AthleteStage({
   const lastPowerupActivationKeyRef = useRef<string | null>(null);
 
   // Tempo phase drives the dummy's behavior: rest = dim + wait, pose = track/score,
-  // snapshot = freeze + flash. The detect loop reads it through a ref.
+  // snapshot = freeze + score. The detect loop reads it through a ref.
   const tempoPhase = tempo?.phase ?? null;
   const tempoPhaseRef = useRef(tempoPhase);
   tempoPhaseRef.current = tempoPhase;
-  // Brief snapshot flash, and a guard so the count-8 score fires once per cycle.
-  const [flash, setFlash] = useState(false);
   const lastSnapshotCycleRef = useRef<number | null>(null);
   /** Latched at count 5 each cycle; used for hole draw + scoring on beats 5–8. */
   const visibleHoleRef = useRef<UniversalPose | null>(null);
@@ -732,6 +736,7 @@ export function AthleteStage({
   // Dev mode comes from the global Settings menu now. When on, the game never pauses for
   // framing, and the athlete dev controls (pose picker etc.) appear in the Settings dropdown.
   const { devMode } = useSettings();
+  const { invincibleMode } = useEffectiveDevGameplay();
   const lastHandUpdate = useRef(0);
   const lastSpotlightUpdate = useRef(0);
   const lastDebugUpdate = useRef(0);
@@ -754,6 +759,8 @@ export function AthleteStage({
   showDummyRef.current = showDummy;
   const devModeRef = useRef(devMode);
   devModeRef.current = devMode;
+  const invincibleModeRef = useRef(invincibleMode);
+  invincibleModeRef.current = invincibleMode;
   const showDebugDashboardRef = useRef(showDebugDashboard);
   showDebugDashboardRef.current = showDebugDashboard;
   const activeSaboteurPowerupsRef = useRef(activeSaboteurPowerups);
@@ -762,6 +769,7 @@ export function AthleteStage({
   const activateSaboteurPowerup = useCallback(
     (kind: SaboteurPowerupKind, duration = DEFAULT_POWERUP_DURATION_MS) => {
       setActiveSaboteurPowerups((current) => (current.includes(kind) ? current : [...current, kind]));
+      playSoundEffect(POWERUP_SFX[kind]);
 
       const existingTimer = saboteurPowerupTimersRef.current[kind];
       if (existingTimer) {
@@ -772,7 +780,7 @@ export function AthleteStage({
         delete saboteurPowerupTimersRef.current[kind];
       }, duration);
     },
-    []
+    [playSoundEffect]
   );
 
   const queueRoundEffectsForNextRound = useCallback(
@@ -1079,7 +1087,7 @@ export function AthleteStage({
       return;
     }
 
-    if (judgedBand !== "CRASH") {
+    if (judgedBand !== "CRASH" || invincibleModeRef.current) {
       return;
     }
 
@@ -1140,7 +1148,7 @@ export function AthleteStage({
     }
   }, [tempo?.count, tempo?.phase, tempo?.cycle]);
 
-  // Count 8: judge the frozen dummy pose, drop a life on CRASH, flash — before paint.
+  // Count 8: judge the frozen dummy pose and drop a life on CRASH — before paint.
   useLayoutEffect(() => {
     if (!tempo || tempo.count !== 8 || tempo.phase !== "snapshot") {
       return;
@@ -1152,9 +1160,6 @@ export function AthleteStage({
 
     lastSnapshotCycleRef.current = tempo.cycle;
     finishWall();
-    setFlash(true);
-    const id = window.setTimeout(() => setFlash(false), 220);
-    return () => window.clearTimeout(id);
   }, [tempo?.count, tempo?.phase, tempo?.cycle, finishWall]);
 
   // Spin up the p5.js WEBGL canvas that renders the 3D dummy on top of the 2D hole. The
@@ -1531,7 +1536,7 @@ export function AthleteStage({
             resolution + object-cover so the dummy lines up with the carved hole. */}
         <div
           ref={dummyMountRef}
-          className="pointer-events-none absolute inset-0 [&>canvas]:absolute [&>canvas]:inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
+          className="pointer-events-none absolute inset-0 z-[1] [&>canvas]:absolute [&>canvas]:inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
         />
         {debugDashboardVisible ? <PoseDebugGuide info={debugInfo} /> : null}
       </div>
@@ -1602,7 +1607,7 @@ export function AthleteStage({
       </div>
 
       {showGameOverOverlay ? (
-        <div className="pointer-events-none absolute inset-0 z-48 flex items-center justify-center bg-[#04070b]/85 text-center backdrop-blur-md">
+        <div className="pointer-events-none absolute inset-0 z-48 flex items-center justify-center bg-[#04070b] text-center">
           <span className="px-6 text-[clamp(2.5rem,8vw,6rem)] font-black tracking-[0.04em] text-[#fdf6e8] [text-shadow:0_2px_24px_rgba(0,0,0,0.75)]">
             GAME OVER
           </span>
@@ -1611,7 +1616,7 @@ export function AthleteStage({
 
       {/* Out-of-frame guidance: dims the screen and pauses with big instructions. */}
       {running && guidance && (
-        <div className="pointer-events-none absolute inset-0 z-44 flex flex-col items-center justify-center gap-5 bg-[#04070b]/72 text-center text-[#ffd65c] backdrop-blur-md">
+        <div className="pointer-events-none absolute inset-0 z-44 flex flex-col items-center justify-center gap-5 bg-[#04070b] text-center text-[#ffd65c]">
           <span
             className="text-[clamp(4rem,12vw,9rem)] leading-none text-white/92 [text-shadow:0_0_24px_rgba(0,0,0,0.6)]"
             aria-hidden="true"
@@ -1634,13 +1639,6 @@ export function AthleteStage({
           </span>
         </div>
       ) : null}
-
-      {/* Snapshot flash (count 8): a quick, low-key white pulse over the frozen frame. */}
-      <div
-        className="pointer-events-none absolute inset-0 z-47 bg-white transition-opacity duration-200"
-        style={{ opacity: flash ? 0.4 : 0 }}
-        aria-hidden="true"
-      />
 
       {/* Fullscreen toggle, bottom-right circular button. */}
       <button
@@ -1988,32 +1986,14 @@ function drawHoleOverlay(
   wallCtx.fillStyle = wallGrad;
   wallCtx.fillRect(0, 0, width, height);
 
-  // 2) Soft recessed rim: paint a blurred dark silhouette slightly larger than the hole.
-  //    Carving the real hole next leaves a soft inner shadow around the edge, so the
-  //    cutout reads as having depth (slightly 3D).
-  const rim = buildBlobFigure(target.joints, { color: "#3a2700", pad: HOLE_PADDING + 3 });
-  wallCtx.save();
-  wallCtx.shadowColor = "rgba(50, 33, 0, 0.7)";
-  wallCtx.shadowBlur = 26;
-  withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, rim));
-  wallCtx.restore();
-
-  // 3) Carve the figure silhouette clear (transparent = the hole).
+  // 2) Carve the figure silhouette clear (transparent = the hole). Rim/highlight passes
+  //    were removed — shadowBlur bled into the cutout and read as a grey ghost overlay.
   wallCtx.save();
   wallCtx.globalCompositeOperation = "destination-out";
   withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, silhouette));
   wallCtx.restore();
 
-  // 4) Thin bright highlight on the upper-left of the rim (only on wall pixels) so the
-  //    bevel catches the light — completes the slightly-3D edge.
-  const highlight = buildBlobFigure(target.joints, { color: "rgba(255,245,190,0.55)", pad: HOLE_PADDING });
-  wallCtx.save();
-  wallCtx.globalCompositeOperation = "source-atop";
-  wallCtx.translate(-2, -2.5);
-  withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, highlight));
-  wallCtx.restore();
-
-  // 5) Composite the holed wall over the camera: camera shows through the hole, solid
+  // 3) Composite the holed wall over the camera: camera shows through the hole, solid
   //    color everywhere else.
   ctx.drawImage(wallCtx.canvas, 0, 0);
 }

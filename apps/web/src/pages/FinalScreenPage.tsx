@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { readPersistedClaimedRole } from "../lib/claimedRoleStorage";
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
+import { useSettings } from "../lib/settings";
 import {
   dummyFinalStats,
   finalResultCopy,
@@ -79,12 +80,6 @@ function getSideConfig(side: FinalSide, dark: boolean) {
 
 const DUMMY_VICTORY_POSE_IMAGE = "/assets/dummy-victory-pose.png";
 
-// Saboteur-won page keeps the original SVG silhouette.
-const DUMMY_ICON_BODY =
-  "M45 60c0-9 7-16 16-16h18c9 0 16 7 16 16v36h-14v44c0 7-5 12-12 12s-12-5-12-12V96h-6v44c0 7-5 12-12 12s-12-5-12-12V96H45V60Z";
-const DUMMY_ICON_ARMS =
-  "M48 58 23 35c-5-4-5-11-1-15s11-4 15 1l25 26-14 11Zm44 0 25-37c4-5 11-5 15-1s4 11-1 15l-25 23-14-11Z";
-
 function FinalDecor({ dark }: { dark: boolean }) {
   const dotPattern = dark
     ? "bg-[radial-gradient(circle,rgba(0,0,0,0.45)_0_0.3rem,transparent_0.34rem)]"
@@ -130,30 +125,24 @@ function FinalDecor({ dark }: { dark: boolean }) {
 
 function CharacterAvatar({ side, dark }: { side: FinalSide; dark: boolean }) {
   const config = getSideConfig(side, dark);
-  const useVictoryPoseImage = side === "dummy" && !dark;
 
   return (
     <div
       className={cx(
         "grid aspect-square h-[clamp(3.75rem,10.5vh,6.25rem)] place-items-center overflow-hidden rounded-full",
-        useVictoryPoseImage ? "border-0" : cx("border-[3px]", config.avatarRing)
+        side === "dummy" && !dark ? "border-0" : cx("border-[3px]", config.avatarRing)
       )}
       aria-hidden="true"
     >
       {side === "dummy" ? (
-        dark ? (
-          <svg className={cx("h-[70%] w-[70%]", config.avatar)} viewBox="0 0 140 160">
-            <circle cx="70" cy="28" r="18" />
-            <path d={DUMMY_ICON_BODY} />
-            <path d={DUMMY_ICON_ARMS} />
-          </svg>
-        ) : (
-          <img
-            alt=""
-            className="h-full w-full object-cover"
-            src={DUMMY_VICTORY_POSE_IMAGE}
-          />
-        )
+        <img
+          alt=""
+          className={cx(
+            "h-full w-full object-cover",
+            dark && "opacity-85 grayscale brightness-[0.75]"
+          )}
+          src={DUMMY_VICTORY_POSE_IMAGE}
+        />
       ) : (
         <svg className={cx("h-[70%] w-[70%]", config.avatar)} viewBox="0 0 140 160">
           <>
@@ -245,8 +234,8 @@ export function FinalScreenPage() {
   const initialWinner = searchParams.get("winner") === "saboteur" ? "saboteur" : "dummy";
   const [winner, setWinner] = useState<FinalWinner>(initialWinner);
   const { playSoundEffect } = useRoleScopedSound(readPersistedClaimedRole());
+  const { devMode } = useSettings();
   const result = finalResultCopy[winner];
-  const isDev = import.meta.env.DEV;
 
   useEffect(() => {
     playSoundEffect(winner === "dummy" ? "cheer" : "boo");
@@ -312,7 +301,7 @@ export function FinalScreenPage() {
         >
           Back Home
         </Link>
-        {isDev ? (
+        {devMode ? (
           <button
             className={cx(
               "inline-flex min-h-[3.25rem] items-center justify-center rounded-[1.3rem] px-6 text-[clamp(0.85rem,1.3vw,1rem)] font-black uppercase tracking-normal transition duration-200 active:translate-y-1",
