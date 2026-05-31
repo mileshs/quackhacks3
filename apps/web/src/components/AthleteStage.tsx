@@ -28,7 +28,7 @@ import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dumm
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import { useDefeatSequence } from "../lib/defeatSequence";
 import { useSound } from "../providers/SoundProvider";
-import { useDevSection, useSettings } from "../lib/settings";
+import { useDevSection, useEffectiveDevGameplay, useSettings } from "../lib/settings";
 import { isHoleVisiblePhase, useGameTempo } from "../lib/tempo";
 import { cx } from "../lib/ui";
 import { SettingsToggle } from "./SettingsToggle";
@@ -650,6 +650,7 @@ export function AthleteStage({
   // Dev mode comes from the global Settings menu now. When on, the game never pauses for
   // framing, and the athlete dev controls (pose picker etc.) appear in the Settings dropdown.
   const { devMode } = useSettings();
+  const { invincibleMode } = useEffectiveDevGameplay();
   const lastHandUpdate = useRef(0);
   const lastSpotlightUpdate = useRef(0);
   const lastDebugUpdate = useRef(0);
@@ -673,6 +674,8 @@ export function AthleteStage({
   showDummyRef.current = showDummy;
   const devModeRef = useRef(devMode);
   devModeRef.current = devMode;
+  const invincibleModeRef = useRef(invincibleMode);
+  invincibleModeRef.current = invincibleMode;
   const showDebugDashboardRef = useRef(showDebugDashboard);
   showDebugDashboardRef.current = showDebugDashboard;
   const activePowerupRef = useRef(activePowerup);
@@ -822,7 +825,7 @@ export function AthleteStage({
       return;
     }
 
-    if (judgedBand !== "CRASH") {
+    if (judgedBand !== "CRASH" || invincibleModeRef.current) {
       return;
     }
 
