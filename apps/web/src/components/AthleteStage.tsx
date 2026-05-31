@@ -23,6 +23,7 @@ import {
   startPoseLoop,
   type PoseFrame
 } from "../lib/poseTracker";
+import type { SoundEffectId } from "../lib/audioEngine";
 import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dummy3d";
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import { useDefeatSequence } from "../lib/defeatSequence";
@@ -109,6 +110,11 @@ type AthleteStageProps = {
 };
 
 const STARTING_LIVES = 3;
+
+const POWERUP_SFX = {
+  blindness: "blindness",
+  mirror: "mirror"
+} as const satisfies Record<SaboteurPowerupKind, SoundEffectId>;
 
 // The hole keeps a human portrait shape (not stretched to the camera's aspect): a
 // centered "doorway". HOLE_SCALE is the fraction of the frame height it occupies.
@@ -779,11 +785,12 @@ export function AthleteStage({
 
     const duration = powerupActivation.durationMs ?? DEFAULT_POWERUP_DURATION_MS;
     setActivePowerup(powerupActivation.kind);
+    playSoundEffect(POWERUP_SFX[powerupActivation.kind]);
     if (powerupTimerRef.current) {
       window.clearTimeout(powerupTimerRef.current);
     }
     powerupTimerRef.current = window.setTimeout(() => setActivePowerup(null), duration);
-  }, [powerupActivation]);
+  }, [playSoundEffect, powerupActivation]);
 
   const getScoringHoleTarget = useCallback(() => {
     return visibleHoleRef.current ?? targetRef.current;
