@@ -1,25 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { AudioVolumeControls } from "../components/AudioVolumeControls";
 import { AUDIO_ASSETS, getBeatAtTime, getBpmAtTime, startTimeWarp } from "../lib/audioEngine";
-import { cx, eyebrow, pageGrid, pageTitle, panel, primaryAction, secondaryAction } from "../lib/ui";
+import { useSound } from "../providers/SoundProvider";
+import { cx, eyebrow, pageGrid, pageTitle, primaryAction, secondaryAction } from "../lib/ui";
 
-const volumeStorageKey = "quackhacks.volume";
 const TEST_SOUND_PATH = "/assets/shield_up.mp3";
 
-function parseStoredVolume(value: string | null): number | null {
-  if (value === null) {
-    return null;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
-    return null;
-  }
-
-  return parsed;
-}
-
 export function SettingsPage() {
-  const [volume, setVolume] = useState(70);
+  const { soundtrackVolume, soundEffectsVolume } = useSound();
   const [tempo, setTempo] = useState({ beat: 0, bpm: 0 });
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const soundtrackRef = useRef<HTMLAudioElement | null>(null);
@@ -27,12 +15,6 @@ export function SettingsPage() {
   const timeWarpCancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const savedVolume = parseStoredVolume(window.localStorage.getItem(volumeStorageKey));
-
-    if (savedVolume !== null) {
-      setVolume(savedVolume);
-    }
-
     audioRef.current = new Audio(TEST_SOUND_PATH);
     soundtrackRef.current = new Audio(AUDIO_ASSETS.soundtrackSpeedy);
     timeWarpSfxRef.current = new Audio(AUDIO_ASSETS.timeWarp);
@@ -51,13 +33,20 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume / 100;
-    }
     if (soundtrackRef.current) {
-      soundtrackRef.current.volume = volume / 100;
+      soundtrackRef.current.volume = soundtrackVolume / 100;
     }
-  }, [volume]);
+  }, [soundtrackVolume]);
+
+  useEffect(() => {
+    const sfxVolume = soundEffectsVolume / 100;
+    if (audioRef.current) {
+      audioRef.current.volume = sfxVolume;
+    }
+    if (timeWarpSfxRef.current) {
+      timeWarpSfxRef.current.volume = sfxVolume;
+    }
+  }, [soundEffectsVolume]);
 
   // Live beat counter / BPM, derived from the soundtrack's playback position.
   useEffect(() => {
@@ -75,11 +64,6 @@ export function SettingsPage() {
 
     return () => window.clearInterval(intervalId);
   }, []);
-
-  function updateVolume(nextVolume: number) {
-    setVolume(nextVolume);
-    window.localStorage.setItem(volumeStorageKey, String(nextVolume));
-  }
 
   function playTestSound() {
     if (!audioRef.current) {
@@ -110,7 +94,7 @@ export function SettingsPage() {
 
     if (soundtrackRef.current && timeWarpSfxRef.current) {
       timeWarpCancelRef.current = startTimeWarp(soundtrackRef.current, timeWarpSfxRef.current, {
-        masterVolume: volume / 100,
+        masterVolume: soundEffectsVolume / 100,
       });
     }
   }
@@ -123,18 +107,7 @@ export function SettingsPage() {
       </div>
 
       <div className="flex flex-col gap-8">
-        <label className={cx(panel, "grid gap-2 p-4 font-bold text-[#d8e2df]")}>
-          Volume
-          <input
-            className="w-full accent-[#ffd65c]"
-            type="range"
-            min="0"
-            max="100"
-            value={volume}
-            onChange={(event) => updateVolume(Number(event.target.value))}
-          />
-          <output>{volume}%</output>
-        </label>
+        <AudioVolumeControls variant="page" />
 
         <button className={cx(primaryAction, "max-w-[12.5rem] self-start")} type="button" onClick={playTestSound}>
           Test Sound
