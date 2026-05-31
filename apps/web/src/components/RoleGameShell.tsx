@@ -14,6 +14,11 @@ const devMenuDanger =
 
 const COUNTDOWN_SECONDS = 3;
 
+// Playful brand font + cream surface used across the app (home menu, athlete HUD), reused
+// here so the "between" screens match the rest of the game instead of a bare dark overlay.
+const lobbyFont = "font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif]";
+const lobbyBackdrop = cx("fixed inset-0 z-30 grid place-items-center overflow-hidden bg-[#0c0f14]/70 px-4 backdrop-blur-md", lobbyFont);
+
 type ActiveGameControls = ReturnType<typeof useActiveGame>;
 
 type RoleGameShellProps = {
@@ -232,10 +237,10 @@ function RoleLobbyOverlay({
 }: RoleLobbyOverlayProps) {
   if (countdownSeconds) {
     return (
-      <div className="fixed inset-0 z-30 grid place-items-center overflow-hidden bg-black/64 px-4 py-20 backdrop-blur-[2px]">
-        <div className="relative z-[1] text-center">
-          <p className="m-0 text-[clamp(1rem,3vw,1.5rem)] font-black tracking-normal text-[#ffd65c] uppercase">Get ready</p>
-          <div className="mt-3 text-[clamp(9rem,32vw,20rem)] leading-[0.76] font-black text-white drop-shadow-[0_14px_0_rgba(0,0,0,0.32)] animate-[countdown-pop_0.45s_ease-out_infinite_alternate]">
+      <div className={lobbyBackdrop}>
+        <div className="text-center">
+          <p className="m-0 text-sm font-extrabold tracking-[0.2em] text-[#ffd65c] uppercase">Get ready</p>
+          <div className="mt-1 text-[clamp(7rem,26vw,15rem)] leading-none font-black text-white drop-shadow-[0_10px_0_rgba(0,0,0,0.25)] animate-[countdown-pop_0.45s_ease-out_infinite_alternate]">
             {countdownSeconds}
           </div>
         </div>
@@ -243,46 +248,51 @@ function RoleLobbyOverlay({
     );
   }
 
-  const statusText = !hasActiveGame
+  const readyCheck = hasActiveGame && hasClaimedRole && otherJoined;
+  const headline = !hasActiveGame
     ? "No active game"
     : !hasClaimedRole
-      ? `Claiming ${roleLabel.toLowerCase()}...`
+      ? "Joining…"
       : !otherJoined
-        ? `Waiting for ${otherRoleLabel.toLowerCase()}...`
-        : "Ready check";
+        ? `Waiting for ${otherRoleLabel}`
+        : "Ready up!";
 
   return (
-    <div className="fixed inset-0 z-30 grid place-items-center overflow-hidden bg-black/60 px-4 py-20 backdrop-blur-[2px]">
-      <div className="pointer-events-auto relative w-[min(560px,100%)] text-center">
-        <div className="relative px-3 py-4 text-white">
-          <p className="mt-0 mb-3 text-sm font-black tracking-normal text-[#ffd65c] uppercase">{roleLabel} screen</p>
-          <h1 className="mt-0 mb-6 text-[clamp(2.75rem,8vw,5.8rem)] leading-[0.88] font-black text-white [text-shadow:0_5px_0_rgba(0,0,0,0.28)]">
-            {statusText}
-          </h1>
+    <div className={lobbyBackdrop}>
+      <div className="pointer-events-auto w-[min(380px,100%)] rounded-[1.75rem] bg-[#fff7e8] px-7 py-8 text-center text-[#28303d] shadow-[inset_0_2px_0_rgba(255,255,255,0.7),0_24px_60px_rgba(0,0,0,0.45)]">
+        <p className="m-0 text-[0.7rem] font-extrabold tracking-[0.18em] text-[#c2901f] uppercase">{roleLabel}</p>
+        <h2 className="mt-1.5 mb-0 text-[clamp(1.6rem,5vw,2.1rem)] leading-tight font-black">{headline}</h2>
 
-          <div className="mx-auto mb-6 grid max-w-[32rem] grid-cols-2 gap-3">
-            <ReadyBadge label={roleLabel} ready={selfReady} joined={hasClaimedRole} />
-            <ReadyBadge label={otherRoleLabel} ready={otherReady} joined={otherJoined} />
-          </div>
-
-          {hasActiveGame && hasClaimedRole && otherJoined && !countdownSeconds ? (
-            <button className="min-h-14 rounded-[1.15rem] border border-[#ee9a06] bg-[#ffaf09] px-8 text-lg font-black text-white uppercase shadow-[inset_0_3px_0_rgba(255,255,255,0.54),inset_0_-3px_0_rgba(206,120,0,0.22)] [text-shadow:0_2px_0_rgba(156,86,0,0.24)]" type="button" onClick={onReady}>
-              {selfReady ? "Unready" : "Ready Up"}
-            </button>
-          ) : null}
+        <div className="mt-6 flex flex-col gap-2">
+          <StatusRow label="You" joined={hasClaimedRole} ready={selfReady} />
+          <StatusRow label={otherRoleLabel} joined={otherJoined} ready={otherReady} />
         </div>
+
+        {readyCheck ? (
+          <button
+            className="mt-6 min-h-13 w-full rounded-[1.1rem] border border-[#ee9a06] bg-[#ffaf09] px-8 text-base font-black text-white uppercase shadow-[inset_0_3px_0_rgba(255,255,255,0.5),inset_0_-3px_0_rgba(206,120,0,0.24)] [text-shadow:0_2px_0_rgba(156,86,0,0.24)] transition hover:bg-[#f7a407] active:translate-y-0.5"
+            type="button"
+            onClick={onReady}
+          >
+            {selfReady ? "Unready" : "Ready Up"}
+          </button>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function ReadyBadge({ label, joined, ready }: { label: string; joined: boolean; ready: boolean }) {
+function StatusRow({ label, joined, ready }: { label: string; joined: boolean; ready: boolean }) {
   const text = !joined ? "Waiting" : ready ? "Ready" : "Not ready";
+  const dot = !joined ? "bg-[#d8cdb5]" : ready ? "bg-[#2fb86b]" : "bg-[#ffaf09]";
 
   return (
-    <div className="rounded-[1rem] bg-white/14 px-4 py-3 text-left shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] backdrop-blur-sm">
-      <p className="m-0 text-xs font-black tracking-normal text-white/68 uppercase">{label}</p>
-      <p className={cx("m-0 text-lg font-black", ready ? "text-[#75e2be]" : joined ? "text-[#ffd65c]" : "text-white/72")}>{text}</p>
+    <div className="flex items-center justify-between rounded-[1rem] bg-white px-4 py-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]">
+      <span className="text-sm font-extrabold text-[#28303d]">{label}</span>
+      <span className="flex items-center gap-2 text-xs font-extrabold tracking-wide text-[#8a8274] uppercase">
+        <span className={cx("size-2.5 rounded-full", dot)} />
+        {text}
+      </span>
     </div>
   );
 }
