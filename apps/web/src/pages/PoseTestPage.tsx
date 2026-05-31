@@ -1,23 +1,37 @@
-import { useState } from "react";
-import { starterPoses } from "@quackhacks/shared";
+import { useEffect, useMemo, useState } from "react";
+import { starterPoses, type UniversalPose } from "@quackhacks/shared";
 import { AthleteStage } from "../components/AthleteStage";
+import { loadSavedPoses } from "../lib/savedPoses";
 
 export function PoseTestPage() {
-  // Until the saboteur feed is wired in, cycle the shared starter poses as test holes.
-  const [poseIndex, setPoseIndex] = useState(0);
-  const targetPose = starterPoses[poseIndex] ?? starterPoses[0];
+  // Poses the saboteur saved (localStorage). Refreshed whenever the tab regains focus
+  // or another tab writes new poses, so saving on the saboteur page then coming here
+  // shows the latest holes without a reload.
+  const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
+
+  useEffect(() => {
+    const refresh = () => setSavedPoses(loadSavedPoses());
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  const poseOptions = useMemo(() => [...starterPoses, ...savedPoses], [savedPoses]);
+
+  const [selectedId, setSelectedId] = useState(starterPoses[0]?.id ?? "");
+  const targetPose =
+    poseOptions.find((pose) => pose.id === selectedId) ?? poseOptions[0] ?? starterPoses[0];
 
   return (
     <AthleteStage
       targetPose={targetPose}
-      poseOptions={starterPoses}
+      poseOptions={poseOptions}
+      savedPoseIds={savedPoses.map((pose) => pose.id)}
       selectedPoseId={targetPose.id}
-      onSelectPose={(pose) => {
-        const index = starterPoses.findIndex((option) => option.id === pose.id);
-        if (index >= 0) {
-          setPoseIndex(index);
-        }
-      }}
+      onSelectPose={(pose) => setSelectedId(pose.id)}
     />
   );
 }

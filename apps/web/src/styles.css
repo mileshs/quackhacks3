@@ -28,10 +28,19 @@ a {
 }
 
 .app-shell {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background:
     radial-gradient(circle at 12% 0%, rgba(255, 214, 92, 0.16), transparent 32rem),
     linear-gradient(135deg, #0c121a 0%, #17202b 48%, #15261f 100%);
+}
+
+/* Let pages (e.g. the projector stage) fill the area beneath the sticky navbar. */
+.app-shell > main {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .topbar {
@@ -436,11 +445,16 @@ dd {
 
 /* --- Athlete projector stage (fullscreen pose fitting) --- */
 .projector-stage {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 40;
+  z-index: 1;
   background: #05080c;
   overflow: hidden;
+}
+
+/* When the stage is taken fullscreen, it covers the whole viewport again. */
+.projector-stage:fullscreen {
+  position: fixed;
 }
 
 .hidden-video {
@@ -677,6 +691,13 @@ dd {
   font-size: 0.8rem;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.sidebar-hint {
+  margin: 0;
+  color: #8b9794;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .sidebar-pose-buttons {
