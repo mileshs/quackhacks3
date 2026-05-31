@@ -6,6 +6,7 @@ import {
   buildBlobFigure,
   comparePoses,
   landmarksToUniversalPose,
+  retargetPose,
   scoreBandFromMatch,
   universalHumanSize,
   type FigurePrimitive,
@@ -25,6 +26,8 @@ type AthleteStageProps = {
   targetPose: UniversalPose;
   /** Optional test poses shown as a selector in the sidebar (omit for the real game). */
   poseOptions?: UniversalPose[];
+  /** Ids within `poseOptions` that came from the saboteur (grouped separately in the menu). */
+  savedPoseIds?: string[];
   selectedPoseId?: string;
   onSelectPose?: (pose: UniversalPose) => void;
 };
@@ -191,6 +194,7 @@ const scoreBandClasses = {
 export function AthleteStage({
   targetPose,
   poseOptions,
+  savedPoseIds,
   selectedPoseId,
   onSelectPose
 }: AthleteStageProps) {
@@ -310,21 +314,23 @@ export function AthleteStage({
             }
           }
 
-          // Map the live body onto the universal dummy ONCE (mirrored to match the
-          // selfie view). Both the on-screen dummy and the score use this same pose,
-          // so the athlete's dummy is built exactly like the saboteur's dummy.
+          // Map the live body onto the universal dummy (mirrored to match the selfie
+          // view), then retarget it onto the target hole's exact bone lengths so a
+          // correctly-angled pose nests inside the outline regardless of the player's
+          // real proportions. The same pose drives both the drawn dummy and the score.
           const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
           const live = landmarks ? landmarksToUniversalPose(landmarks, aspect, { mirror: true }) : null;
+          const dummyPose = live ? retargetPose(live, targetRef.current) : null;
 
-          // The universal pose is hip-centered (for fair, position-independent scoring),
-          // so it can't show the player moving left/right. Track the player's real
-          // horizontal frame position separately and slide the drawn dummy to follow it.
+          // The puppet is hip-anchored to the hole (for fair, position-independent
+          // scoring), so track the player's real horizontal frame position separately
+          // and slide the drawn dummy to follow it.
           const lHip = landmarks?.[23];
           const rHip = landmarks?.[24];
           const hipFrameX = lHip && rHip ? (lHip.x + rHip.x) / 2 : null;
 
           if (ctx) {
-            drawFrame(ctx, live, handClosed, targetRef.current, showDummyRef.current, hipFrameX);
+            drawFrame(ctx, dummyPose, handClosed, targetRef.current, showDummyRef.current, hipFrameX);
           }
 
           const now = performance.now();
@@ -334,9 +340,9 @@ export function AthleteStage({
             setGuidance(frameGuidance(landmarks));
           }
 
-          if (live && now - lastMatchUpdate.current > 120) {
+          if (dummyPose && now - lastMatchUpdate.current > 120) {
             lastMatchUpdate.current = now;
-            const percent = comparePoses(live, targetRef.current);
+            const percent = comparePoses(dummyPose, targetRef.current);
             setMatchPercent(percent);
             setBand(scoreBandFromMatch(percent));
           }
@@ -431,21 +437,12 @@ export function AthleteStage({
         <p className={largeStatus}>{status}</p>
 
         {poseOptions && poseOptions.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-bold uppercase text-[#aebbb8]">Target hole</span>
-            <div className="flex flex-col gap-2">
-              {poseOptions.map((pose) => (
-                <button
-                  key={pose.id}
-                  type="button"
-                  className={pose.id === selectedPoseId ? primaryAction : secondaryAction}
-                  onClick={() => onSelectPose?.(pose)}
-                >
-                  {pose.name}
-                </button>
-              ))}
-            </div>
-          </div>
+          <PoseMenu
+            poseOptions={poseOptions}
+            savedPoseIds={savedPoseIds}
+            selectedPoseId={selectedPoseId}
+            onSelectPose={onSelectPose}
+          />
         )}
 
         <div className="flex flex-col gap-2">
@@ -479,6 +476,50 @@ export function AthleteStage({
         </div>
       </aside>
     </div>
+  );
+}
+
+type PoseMenuProps = {
+  poseOptions: UniversalPose[];
+  savedPoseIds?: string[];
+  selectedPoseId?: string;
+  onSelectPose?: (pose: UniversalPose) => void;
+};
+
+/** Sidebar pose picker, split into preset "starter" holes and saboteur-saved holes. */
+function PoseMenu({ poseOptions, savedPoseIds, selectedPoseId, onSelectPose }: PoseMenuProps) {
+  const savedSet = new Set(savedPoseIds ?? []);
+  const starters = poseOptions.filter((pose) => !savedSet.has(pose.id));
+  const saboteurPoses = poseOptions.filter((pose) => savedSet.has(pose.id));
+
+  const renderButton = (pose: UniversalPose) => (
+    <button
+      key={pose.id}
+      type="button"
+      className={pose.id === selectedPoseId ? primaryAction : secondaryAction}
+      onClick={() => onSelectPose?.(pose)}
+    >
+      {pose.name}
+    </button>
+  );
+
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-bold uppercase text-[#aebbb8]">Starter holes</span>
+        <div className="flex flex-col gap-2">{starters.map(renderButton)}</div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-bold uppercase text-[#aebbb8]">Saboteur holes</span>
+        {saboteurPoses.length > 0 ? (
+          <div className="flex flex-col gap-2">{saboteurPoses.map(renderButton)}</div>
+        ) : (
+          <p className="m-0 text-sm leading-5 text-[#aebbb8]">
+            None yet. Build and save a pose on the Saboteur page, then return here.
+          </p>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -551,13 +592,15 @@ function drawDummy(
   const region = holeRegion(width, height);
   const prims = buildBlobFigure(pose.joints, { withFace: true, faceMode: "happy", color: BLOB_COLOR });
 
-  // Slide the (hip-centered) dummy horizontally to the player's real, mirrored frame
-  // position so moving left/right in front of the camera moves the dummy. The hips sit
-  // at universal x = 0.5 (region center); offset by the difference to the live spot.
+  // Slide the (hip-anchored) puppet horizontally to the player's real, mirrored frame
+  // position so moving left/right in front of the camera moves the dummy. The puppet's
+  // hips sit at the hole's hip x; offset by the difference to the live frame spot.
   let followX = 0;
   if (hipFrameX !== null) {
+    const hipsJoint = pose.joints.find((joint) => joint.name === "hips");
+    const dummyHipsX = hipsJoint ? hipsJoint.x : 0.5;
     const mirroredFrameX = 1 - hipFrameX;
-    followX = mirroredFrameX * width - (region.x0 + region.w / 2);
+    followX = mirroredFrameX * width - (region.x0 + dummyHipsX * region.w);
   }
 
   // Recolor a grabbing hand: a red circle painted over the blue wrist blob.

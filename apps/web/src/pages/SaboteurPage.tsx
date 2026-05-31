@@ -12,47 +12,10 @@ import {
 } from "@quackhacks/shared";
 import { createSocketConnection } from "../lib/realtime";
 import { SaboteurSplash } from "../components/SaboteurSplash";
+import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { cx, floorLine, humanPreview, largeStatus, pageGrid, primaryAction, secondaryAction, toolPanel } from "../lib/ui";
 
-const SAVED_POSES_STORAGE_KEY = "quackhacks:saboteur:savedPoses";
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
-
-function loadSavedPoses(): UniversalPose[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(SAVED_POSES_STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.filter(
-      (pose): pose is UniversalPose =>
-        pose && typeof pose === "object" && Array.isArray((pose as UniversalPose).joints)
-    );
-  } catch {
-    return [];
-  }
-}
-
-function persistSavedPoses(poses: UniversalPose[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(SAVED_POSES_STORAGE_KEY, JSON.stringify(poses));
-  } catch {
-    // Ignore quota or serialization errors; persistence is best-effort.
-  }
-}
 
 const GROUND_Y = 0.94;
 const MIN_DRAG_RADIUS = 0.025;
