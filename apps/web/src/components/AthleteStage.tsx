@@ -75,16 +75,6 @@ function FullscreenIcon() {
   );
 }
 
-/** Small green jumping-jack figure used in the bottom instruction pill. */
-function PersonIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-7 shrink-0" fill="none" stroke="#2fb86b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="4.4" r="2.2" fill="#2fb86b" stroke="none" />
-      <path d="M12 7.4v6M6 9.4l6 1.8 6-1.8M12 13.4l-3.6 6M12 13.4l3.6 6" />
-    </svg>
-  );
-}
-
 type AthleteStageProps = {
   /** The hole/wall the athlete is trying to fit into (from the saboteur, or a preset). */
   targetPose: UniversalPose;
@@ -100,8 +90,6 @@ type AthleteStageProps = {
 // centered "doorway". HOLE_SCALE is the fraction of the frame height it occupies.
 const HOLE_ASPECT = universalHumanSize.width / universalHumanSize.height;
 const HOLE_SCALE = 0.8;
-// Floor line height (fraction of the region) representing the ground.
-const FLOOR_Y = 0.96;
 
 type Region = { x0: number; y0: number; w: number; h: number };
 
@@ -499,14 +487,6 @@ export function AthleteStage({
         ))}
       </div>
 
-      {/* Bottom-center instruction pill. */}
-      {running && !guidance && (
-        <div className={cx(hudCard, "absolute bottom-6 left-1/2 z-42 flex -translate-x-1/2 items-center gap-2 px-5 py-3")}>
-          <PersonIcon />
-          <span className="text-lg font-extrabold text-[#2b303b]">Fit yourself into the hole!</span>
-        </div>
-      )}
-
       {/* Out-of-frame guidance: dims the screen and pauses with big instructions. */}
       {running && guidance && (
         <div className="pointer-events-none absolute inset-0 z-44 flex flex-col items-center justify-center gap-5 bg-[#04070b]/72 text-center text-[#ffd65c] backdrop-blur-md">
@@ -774,7 +754,6 @@ function drawHoleOverlay(
   height: number
 ) {
   const region = holeRegion(width, height);
-  const { x0, y0, w: regionW, h: regionH } = region;
 
   // The hole is the blob silhouette (body inflated by HOLE_PADDING, no face) — the
   // exact same geometry the saboteur previews on their screen.
@@ -797,15 +776,4 @@ function drawHoleOverlay(
   // 3) Composite the holed wall over the camera: camera shows through the hole, solid
   //    color everywhere else.
   ctx.drawImage(wallCtx.canvas, 0, 0);
-
-  // 4) Floor line: the ground.
-  const floorY = y0 + regionH * FLOOR_Y;
-  ctx.save();
-  ctx.strokeStyle = "rgba(20, 24, 28, 0.55)";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(x0, floorY);
-  ctx.lineTo(x0 + regionW, floorY);
-  ctx.stroke();
-  ctx.restore();
 }
