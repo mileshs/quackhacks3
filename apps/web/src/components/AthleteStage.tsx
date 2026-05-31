@@ -1164,7 +1164,7 @@ export function AthleteStage({
       {/* Tempo rest phase (counts 1-4): dim the stage and tell the dummy to wait. The pose
           is revealed when this lifts at count 5. */}
       {running && tempoPhase === "rest" && (
-        <div className="pointer-events-none absolute inset-0 z-44 flex flex-col items-center justify-center gap-3 bg-[#05080c]/90 text-center backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-0 z-44 flex flex-col items-center justify-center gap-3 bg-black text-center">
           <span className="text-sm font-extrabold tracking-[0.2em] text-[#ffd65c] uppercase">Rest</span>
           <span className="px-6 text-[clamp(1.8rem,5vw,3.2rem)] font-black text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.7)]">
             Wait for the saboteur…
