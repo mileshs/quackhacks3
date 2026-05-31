@@ -112,6 +112,53 @@ function holeRegion(width: number, height: number): Region {
   return { x0: (width - w) / 2, y0: (height - h) / 2, w, h };
 }
 
+/** Lowest ankle y (largest value = closest to the floor) of a pose, or null if none. */
+function lowestAnkleY(pose: UniversalPose): number | null {
+  const ys = pose.joints
+    .filter((joint) => joint.name === "leftAnkle" || joint.name === "rightAnkle")
+    .map((joint) => joint.y);
+  return ys.length ? Math.max(...ys) : null;
+}
+
+/**
+ * Anchor the angle-retargeted puppet to the player's ACTUAL position in the hole's frame:
+ *  • horizontally, shift so the hips sit under the player's real (mirrored) frame position;
+ *  • vertically, plant the lowest foot on the hole's floor (one foot always on the ground).
+ *
+ * `retargetPose` rebuilds the player with the target's bone lengths but pins the result at
+ * the target's hips, so the scored pose was always centered on the hole no matter where the
+ * player stood — that's why standing to the side scored the same as standing inside it. By
+ * translating the rigid pose onto the player's real location, `comparePoses` (which is
+ * position-based) now penalizes horizontal drift and floor mismatch directly, with no
+ * separate fudge factor. Angles/bone-lengths are untouched, so a correctly-angled pose
+ * standing in the right spot still lands exactly on the hole and scores 100.
+ *
+ * `hipFrameX` is the player's raw (un-mirrored) hip-center in frame units.
+ */
+function anchorDummyToPlayer(
+  pose: UniversalPose,
+  target: UniversalPose,
+  hipFrameX: number,
+  width: number,
+  height: number
+): UniversalPose {
+  const region = holeRegion(width, height);
+  const hips = pose.joints.find((joint) => joint.name === "hips");
+  // Player's mirrored hip position expressed in the hole's box-x units (0 = hole's left
+  // edge, 1 = right edge), the same 0..1 space the target pose lives in.
+  const playerBoxX = ((1 - hipFrameX) * width - region.x0) / region.w;
+  const dx = hips ? playerBoxX - hips.x : 0;
+
+  const dummyFloor = lowestAnkleY(pose);
+  const targetFloor = lowestAnkleY(target);
+  const dy = dummyFloor !== null && targetFloor !== null ? targetFloor - dummyFloor : 0;
+
+  if (dx === 0 && dy === 0) {
+    return pose;
+  }
+  return { ...pose, joints: pose.joints.map((joint) => ({ ...joint, x: joint.x + dx, y: joint.y + dy })) };
+}
+
 /**
  * Checks whether the player is fully framed and, if not, returns a short instruction
  * (e.g. "Step back", "Step left"). Returns null when the position is good. Directions
@@ -333,7 +380,7 @@ export function AthleteStage({
           if (!data || !showDummyRef.current) {
             return;
           }
-          drawDummy3D(p, data.pose, data.handClosed, p.width, p.height, data.hipFrameX);
+          drawDummy3D(p, data.pose, data.handClosed, p.width, p.height);
         };
       }, dummyMountRef.current);
     });
@@ -432,29 +479,39 @@ export function AthleteStage({
             }
           }
 
-          // Map the live body onto the universal dummy (mirrored to match the selfie
-          // view), then retarget it onto the target hole's exact bone lengths so a
-          // correctly-angled pose nests inside the outline regardless of the player's
-          // real proportions. The same pose drives both the drawn dummy and the score.
+          // Map the live body onto the universal dummy (mirrored to match the selfie view),
+          // then retarget it onto the target hole's exact bone lengths so the figure size is
+          // proportion-independent. The player's real frame position drives where the dummy
+          // sits, so the SAME pose drives both the drawn dummy and the score.
           const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
           const live = landmarks ? landmarksToUniversalPose(landmarks, aspect, { mirror: true }) : null;
-          // In dev mode the dummy follows the raw live pose so it never snaps/clips onto
-          // the hole; in normal play it's retargeted onto the hole's exact bone lengths.
-          const dummyPose = live
-            ? devModeRef.current
-              ? live
-              : retargetPose(live, targetRef.current)
-            : null;
 
-          // The puppet is hip-anchored to the hole (for fair, position-independent
-          // scoring), so track the player's real horizontal frame position separately
-          // and slide the drawn dummy to follow it.
+          // Player's raw (un-mirrored) hip-center in frame units, used to place the dummy
+          // at the player's actual horizontal location within the hole.
           const lHip = landmarks?.[23];
           const rHip = landmarks?.[24];
           const hipFrameX = lHip && rHip ? (lHip.x + rHip.x) / 2 : null;
 
+          // In dev mode the dummy follows the raw live pose so it never snaps/clips onto the
+          // hole. In normal play it's retargeted onto the hole's bone lengths, then anchored
+          // to the player's real position: shifted horizontally under them (so standing off
+          // to the side misses the hole and tanks the score) and planted on the floor (so a
+          // foot stays grounded and a squat drops the hips instead of flying to the top).
+          let dummyPose: UniversalPose | null = null;
+          if (live) {
+            if (devModeRef.current) {
+              dummyPose = live;
+            } else {
+              const retargeted = retargetPose(live, targetRef.current);
+              dummyPose =
+                hipFrameX !== null && ctx
+                  ? anchorDummyToPlayer(retargeted, targetRef.current, hipFrameX, ctx.canvas.width, ctx.canvas.height)
+                  : retargeted;
+            }
+          }
+
           // Publish the pose for the p5 WEBGL dummy, and paint the 2D backdrop + hole.
-          dummyRenderRef.current = dummyPose ? { pose: dummyPose, handClosed, hipFrameX } : null;
+          dummyRenderRef.current = dummyPose ? { pose: dummyPose, handClosed } : null;
           if (ctx) {
             drawFrame(ctx, targetRef.current);
           }
@@ -467,6 +524,8 @@ export function AthleteStage({
 
           if (dummyPose && now - lastMatchUpdate.current > 120) {
             lastMatchUpdate.current = now;
+            // The dummy now carries the player's real position, so the position-based match
+            // already accounts for horizontal drift and floor mismatch — no extra factor.
             const percent = comparePoses(dummyPose, targetRef.current);
             setMatchPercent(percent);
             setBand(scoreBandFromMatch(percent));
@@ -713,7 +772,7 @@ function toggleFullscreen(el: Element | null) {
 }
 
 /** Latest data published by the detect loop for the p5 WEBGL dummy to render. */
-type DummyRender = { pose: UniversalPose; handClosed: HandClosed; hipFrameX: number | null };
+type DummyRender = { pose: UniversalPose; handClosed: HandClosed };
 
 /**
  * Draw one live frame on the 2D canvas: black backdrop + the carved hole. The blue dummy
@@ -747,36 +806,26 @@ function withRegionTransform(
 }
 
 /**
- * Render the athlete's dummy in 3D via the shared blob renderer. The athlete maps the
- * universal box into the centered portrait hole region and slides the (hip-anchored)
- * puppet horizontally to follow the player's real, mirrored frame position.
+ * Render the athlete's dummy in 3D via the shared blob renderer. The pose already carries
+ * the player's real position (anchored horizontally under them and planted on the floor),
+ * so we just map the universal box straight into the centered portrait hole region.
  */
 function drawDummy3D(
   p: p5,
   pose: UniversalPose,
   handClosed: HandClosed,
   width: number,
-  height: number,
-  hipFrameX: number | null
+  height: number
 ) {
   const region = holeRegion(width, height);
   // Uniform universal-box-pixel → screen-pixel scale (region preserves the box aspect).
   const s = region.w / UNIVERSAL_W;
 
-  // Slide the (hip-anchored) puppet horizontally to the player's real, mirrored frame
-  // position — same math the 2D dummy used.
-  let followX = 0;
-  if (hipFrameX !== null) {
-    const hipsJoint = pose.joints.find((joint) => joint.name === "hips");
-    const dummyHipsX = hipsJoint ? hipsJoint.x : 0.5;
-    followX = (1 - hipFrameX) * width - (region.x0 + dummyHipsX * region.w);
-  }
-
   const map = new Map(pose.joints.map((joint) => [joint.name, joint] as const));
   const at = (name: UniversalPose["joints"][number]["name"]): ScreenPoint | null => {
     const joint = map.get(name);
     return joint
-      ? { x: region.x0 + joint.x * region.w + followX, y: region.y0 + joint.y * region.h }
+      ? { x: region.x0 + joint.x * region.w, y: region.y0 + joint.y * region.h }
       : null;
   };
 
