@@ -1,21 +1,34 @@
-import { useState } from "react";
-import { starterPoses } from "@quackhacks/shared";
+import { useEffect, useMemo, useState } from "react";
+import { starterPoses, type UniversalPose } from "@quackhacks/shared";
 import { AthleteStage } from "../components/AthleteStage";
 import { DummySplash } from "../components/DummySplash";
+import { loadSavedPoses } from "../lib/savedPoses";
 import { secondaryAction } from "../lib/ui";
 
 const DUMMY_SPLASH_SEEN_KEY = "quackhacks:dummy:splashSeen";
 
 export function PoseTestPage() {
-  // Until the saboteur feed is wired in, cycle the shared starter poses as test holes.
-  const [poseIndex, setPoseIndex] = useState(0);
+  const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
+  const [selectedId, setSelectedId] = useState(starterPoses[0]?.id ?? "");
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
     }
     return window.localStorage.getItem(DUMMY_SPLASH_SEEN_KEY) !== "true";
   });
-  const targetPose = starterPoses[poseIndex] ?? starterPoses[0];
+
+  useEffect(() => {
+    const refresh = () => setSavedPoses(loadSavedPoses());
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  const poseOptions = useMemo(() => [...starterPoses, ...savedPoses], [savedPoses]);
+  const targetPose = poseOptions.find((pose) => pose.id === selectedId) ?? poseOptions[0] ?? starterPoses[0];
 
   function dismissSplash() {
     setShowSplash(false);
@@ -34,14 +47,10 @@ export function PoseTestPage() {
       </div>
       <AthleteStage
         targetPose={targetPose}
-        poseOptions={starterPoses}
+        poseOptions={poseOptions}
+        savedPoseIds={savedPoses.map((pose) => pose.id)}
         selectedPoseId={targetPose.id}
-        onSelectPose={(pose) => {
-          const index = starterPoses.findIndex((option) => option.id === pose.id);
-          if (index >= 0) {
-            setPoseIndex(index);
-          }
-        }}
+        onSelectPose={(pose) => setSelectedId(pose.id)}
       />
     </>
   );
