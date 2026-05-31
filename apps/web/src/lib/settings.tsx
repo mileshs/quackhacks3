@@ -23,9 +23,13 @@ const DEV_MODE_KEY = "quackhacks.devMode";
 
 function readDevMode(): boolean {
   if (typeof window === "undefined") {
-    return false;
+    return import.meta.env.DEV;
   }
-  return window.localStorage.getItem(DEV_MODE_KEY) === "true";
+  const stored = window.localStorage.getItem(DEV_MODE_KEY);
+  if (stored !== null) {
+    return stored === "true";
+  }
+  return import.meta.env.DEV;
 }
 
 type SettingsContextValue = {

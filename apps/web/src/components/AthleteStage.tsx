@@ -25,6 +25,7 @@ import {
 import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dummy3d";
 import { useDevSection, useSettings } from "../lib/settings";
 import { cx } from "../lib/ui";
+import { SettingsToggle } from "./SettingsToggle";
 
 // ── "Poses for Dummies" HUD palette ──────────────────────────────────────────
 const INK = "#2b303b"; // dark navy from the logo
@@ -504,6 +505,7 @@ export function AthleteStage({
   const [score] = useState(0);
   const [lives] = useState(3);
   const [showDummy, setShowDummy] = useState(true);
+  const [showDebugDashboard, setShowDebugDashboard] = useState(true);
   const [guidance, setGuidance] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<PoseDebugInfo | null>(null);
   // Dev mode comes from the global Settings menu now. When on, the game never pauses for
@@ -527,6 +529,8 @@ export function AthleteStage({
   showDummyRef.current = showDummy;
   const devModeRef = useRef(devMode);
   devModeRef.current = devMode;
+  const showDebugDashboardRef = useRef(showDebugDashboard);
+  showDebugDashboardRef.current = showDebugDashboard;
   const activePowerupRef = useRef(activePowerup);
   activePowerupRef.current = activePowerup;
 
@@ -546,6 +550,12 @@ export function AthleteStage({
   }, []);
 
   useEffect(() => stop, [stop]);
+
+  useEffect(() => {
+    if (!devMode || !showDebugDashboard) {
+      setDebugInfo(null);
+    }
+  }, [devMode, showDebugDashboard]);
 
   useEffect(
     () => () => {
@@ -749,7 +759,7 @@ export function AthleteStage({
             setGuidance(devModeRef.current ? null : frameGuidance(landmarks));
           }
 
-          if (ctx && now - lastDebugUpdate.current > 120) {
+          if (devModeRef.current && showDebugDashboardRef.current && ctx && now - lastDebugUpdate.current > 120) {
             lastDebugUpdate.current = now;
             setDebugInfo(
               buildPoseDebugInfo(
@@ -833,6 +843,13 @@ export function AthleteStage({
           >
             Dummy Overlay: {showDummy ? "On" : "Off"}
           </button>
+          <SettingsToggle
+            id="athlete-debug-dashboard"
+            label="Debug Dashboard"
+            description="Alignment lines and metrics"
+            checked={showDebugDashboard}
+            onCheckedChange={setShowDebugDashboard}
+          />
           <button className={pillSecondary} type="button" onClick={handleFinishWall}>
             Finish Wall
           </button>
@@ -853,12 +870,14 @@ export function AthleteStage({
       handleStart,
       handleFinishWall,
       handleLogDebugSnapshot,
+      showDebugDashboard,
       stop
     ]
   );
   useDevSection("athlete", athleteDevSection);
 
   const matchColor = BAND_COLOR[band];
+  const debugDashboardVisible = devMode && showDebugDashboard;
 
   return (
     <div className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
@@ -872,10 +891,10 @@ export function AthleteStage({
           ref={dummyMountRef}
           className="pointer-events-none absolute inset-0 [&>canvas]:absolute [&>canvas]:inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
         />
-        <PoseDebugGuide info={debugInfo} />
+        {debugDashboardVisible ? <PoseDebugGuide info={debugInfo} /> : null}
       </div>
 
-      <PoseDebugPanel info={debugInfo} />
+      {debugDashboardVisible ? <PoseDebugPanel info={debugInfo} /> : null}
 
       {activePowerup === "blindness" ? (
         <div
