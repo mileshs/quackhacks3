@@ -48,6 +48,7 @@ export const DUMMY_AUDIENCE_SOUND_EFFECTS = new Set<SoundEffectId>([
   "gameOver",
   "good",
   "great",
+  "healthChip",
   "perfect",
   "wtf",
 ]);
