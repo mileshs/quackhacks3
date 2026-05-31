@@ -28,7 +28,7 @@ export function App() {
       <div className={appShell}>
         <header className={topbar}>
           <NavLink className={brand} to="/">
-            QuackHacks 3
+            Poses for Dummies
           </NavLink>
           <nav className={navList} aria-label="Primary">
             {navItems.map((item) => (
