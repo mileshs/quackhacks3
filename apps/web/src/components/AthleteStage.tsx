@@ -28,7 +28,7 @@ import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import { useDefeatSequence } from "../lib/defeatSequence";
 import { useSound } from "../providers/SoundProvider";
 import { useDevSection, useSettings } from "../lib/settings";
-import { isHoleVisiblePhase, useGameTempo } from "../lib/tempo";
+import { BEATS_PER_CYCLE, isHoleVisiblePhase, useGameTempo, type TempoState } from "../lib/tempo";
 import { cx } from "../lib/ui";
 import { SettingsToggle } from "./SettingsToggle";
 
@@ -46,6 +46,35 @@ const hudCard =
 const hudLabel = "block text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#a89a82]";
 const SCORE_FLIGHT_MS = 1_050;
 const SCORE_FLIGHT_PRUNE_MS = 250;
+const ROUND_EFFECT_INTRO_MAX_MS = 1_350;
+const ROUND_EFFECT_INTRO_MIN_MS = 780;
+const ROUND_EFFECT_INTRO_REST_RATIO = 0.76;
+const ROUND_EFFECT_INTRO_START_PAD_MS = 35;
+const ROUND_EFFECT_INTRO_FALLBACK_PAD_MS = 120;
+
+const SABOTEUR_POWERUP_ASSETS: Record<SaboteurPowerupKind, string> = {
+  blindness: "/assets/saboteur-blindness-powerup.svg",
+  mirror: "/assets/saboteur-mirror-powerup.svg"
+};
+
+type RoundEffectKind = SaboteurPowerupKind;
+
+const ROUND_EFFECT_DETAILS: Record<RoundEffectKind, { name: string; description: string; asset: string; tone: "blue" | "red" }> = {
+  mirror: {
+    name: "Mirror Mode",
+    description: "Left and right swap.",
+    asset: SABOTEUR_POWERUP_ASSETS.mirror,
+    tone: "red"
+  },
+  blindness: {
+    name: "Blindness",
+    description: "Only a spotlight remains.",
+    asset: SABOTEUR_POWERUP_ASSETS.blindness,
+    tone: "red"
+  }
+};
+
+const DEV_ROUND_EFFECT_OPTIONS: RoundEffectKind[] = ["mirror", "blindness"];
 
 // Cream pill button (logo-dark text), and a yellow "primary" variant. Both get a raised,
 // 3D look via an inset top highlight, a tight contact shadow, and a soft cast shadow.
@@ -126,6 +155,15 @@ type ScoreFlight = {
   to: ScreenPoint;
   rotate: number;
   duration: number;
+};
+type DevRoundEffectSelection = Record<RoundEffectKind, boolean>;
+
+type RoundIntroTiming = {
+  durationMs: number;
+};
+
+const DEFAULT_ROUND_INTRO_TIMING: RoundIntroTiming = {
+  durationMs: ROUND_EFFECT_INTRO_MAX_MS
 };
 
 type PoseDebugInfo = {
@@ -276,6 +314,38 @@ function scoreSpawnPoint(
   return {
     x: clampNumber(stagePoint.x + randomBetween(-jitterX, jitterX), 24, Math.max(24, stageRect.width - 24)),
     y: clampNumber(stagePoint.y + randomBetween(-jitterY, jitterY), 24, Math.max(24, stageRect.height - 24))
+  };
+}
+
+function uniqueRoundEffects(effects: readonly RoundEffectKind[]): RoundEffectKind[] {
+  return DEV_ROUND_EFFECT_OPTIONS.filter((kind) => effects.includes(kind));
+}
+
+function getRestWindowMs(tempo: TempoState): number {
+  if (!Number.isFinite(tempo.bpm) || tempo.bpm <= 0) {
+    return 0;
+  }
+
+  return (4 * 60_000) / tempo.bpm;
+}
+
+function getRemainingRestMs(tempo: TempoState): number {
+  if (tempo.phase !== "rest" || !Number.isFinite(tempo.bpm) || tempo.bpm <= 0) {
+    return 0;
+  }
+
+  const nextPoseBeat = tempo.cycle * BEATS_PER_CYCLE + 4;
+  const remainingBeats = clampNumber(nextPoseBeat - tempo.beat, 0, 4);
+  return (remainingBeats * 60_000) / tempo.bpm;
+}
+
+function roundIntroTiming(restWindowMs: number): RoundIntroTiming {
+  const durationMs = Math.round(
+    clampNumber(restWindowMs * ROUND_EFFECT_INTRO_REST_RATIO, ROUND_EFFECT_INTRO_MIN_MS, ROUND_EFFECT_INTRO_MAX_MS)
+  );
+
+  return {
+    durationMs
   };
 }
 
@@ -597,11 +667,19 @@ export function AthleteStage({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scoreTargetRef = useRef<HTMLDivElement>(null);
+  const livesRowRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopLoopRef = useRef<(() => void) | null>(null);
   const lastMatchUpdate = useRef(0);
   const scoreFlightIdRef = useRef(0);
   const scoreFlightTimersRef = useRef<number[]>([]);
+  const roundIntroTimerRef = useRef<number | null>(null);
+  const roundIntroActiveRef = useRef(false);
+  const roundIntroEffectsRef = useRef<RoundEffectKind[]>([]);
+  const queuedRoundEffectCycleRef = useRef<number | null>(null);
+  const queuedRoundEffectsRef = useRef<RoundEffectKind[]>([]);
+  const queuedSaboteurDurationsRef = useRef<Partial<Record<SaboteurPowerupKind, number>>>({});
+  const lastPowerupActivationKeyRef = useRef<string | null>(null);
 
   // Tempo phase drives the dummy's behavior: rest = dim + wait, pose = track/score,
   // snapshot = freeze + flash. The detect loop reads it through a ref.
@@ -638,6 +716,14 @@ export function AthleteStage({
   const lastLifeLossCycleRef = useRef<number | null>(null);
   const onAllLivesLostRef = useRef(onAllLivesLost);
   onAllLivesLostRef.current = onAllLivesLost;
+  const [roundIntroEffects, setRoundIntroEffects] = useState<RoundEffectKind[]>([]);
+  const [roundIntroTimingState, setRoundIntroTimingState] = useState<RoundIntroTiming>(DEFAULT_ROUND_INTRO_TIMING);
+  roundIntroActiveRef.current = roundIntroEffects.length > 0;
+  const [activeSaboteurPowerups, setActiveSaboteurPowerups] = useState<SaboteurPowerupKind[]>([]);
+  const [devRoundEffectSelection, setDevRoundEffectSelection] = useState<DevRoundEffectSelection>({
+    mirror: true,
+    blindness: false
+  });
   const [showDummy, setShowDummy] = useState(true);
   const [showDebugDashboard, setShowDebugDashboard] = useState(false);
   const [guidance, setGuidance] = useState<string | null>(null);
@@ -649,8 +735,7 @@ export function AthleteStage({
   const lastHandUpdate = useRef(0);
   const lastSpotlightUpdate = useRef(0);
   const lastDebugUpdate = useRef(0);
-  const powerupTimerRef = useRef<number | null>(null);
-  const [activePowerup, setActivePowerup] = useState<SaboteurPowerupKind | null>(null);
+  const saboteurPowerupTimersRef = useRef<Partial<Record<SaboteurPowerupKind, number>>>({});
   const [spotlightPct, setSpotlightPct] = useState({ x: 50, y: 55 });
   const matchPercentRef = useRef(0);
   const runningRef = useRef(false);
@@ -671,8 +756,63 @@ export function AthleteStage({
   devModeRef.current = devMode;
   const showDebugDashboardRef = useRef(showDebugDashboard);
   showDebugDashboardRef.current = showDebugDashboard;
-  const activePowerupRef = useRef(activePowerup);
-  activePowerupRef.current = activePowerup;
+  const activeSaboteurPowerupsRef = useRef(activeSaboteurPowerups);
+  activeSaboteurPowerupsRef.current = activeSaboteurPowerups;
+
+  const activateSaboteurPowerup = useCallback(
+    (kind: SaboteurPowerupKind, duration = DEFAULT_POWERUP_DURATION_MS) => {
+      setActiveSaboteurPowerups((current) => (current.includes(kind) ? current : [...current, kind]));
+
+      const existingTimer = saboteurPowerupTimersRef.current[kind];
+      if (existingTimer) {
+        window.clearTimeout(existingTimer);
+      }
+      saboteurPowerupTimersRef.current[kind] = window.setTimeout(() => {
+        setActiveSaboteurPowerups((current) => current.filter((item) => item !== kind));
+        delete saboteurPowerupTimersRef.current[kind];
+      }, duration);
+    },
+    []
+  );
+
+  const queueRoundEffectsForNextRound = useCallback(
+    (
+      effects: readonly RoundEffectKind[],
+      options?: { currentRest?: boolean; saboteurDurations?: Partial<Record<SaboteurPowerupKind, number>> }
+    ) => {
+      if (defeatedRef.current) {
+        return;
+      }
+
+      const selected = uniqueRoundEffects(effects);
+      if (selected.length === 0) {
+        return;
+      }
+
+      queuedRoundEffectsRef.current = uniqueRoundEffects([...queuedRoundEffectsRef.current, ...selected]);
+      queuedRoundEffectCycleRef.current = options?.currentRest && tempoPhaseRef.current === "rest" ? null : tempo?.cycle ?? null;
+      for (const kind of selected) {
+        if ((kind === "mirror" || kind === "blindness") && options?.saboteurDurations?.[kind]) {
+          queuedSaboteurDurationsRef.current[kind] = options.saboteurDurations[kind];
+        }
+      }
+    },
+    [tempo?.cycle]
+  );
+
+  const queueSelectedRoundEffects = useCallback(() => {
+    queueRoundEffectsForNextRound(DEV_ROUND_EFFECT_OPTIONS.filter((kind) => devRoundEffectSelection[kind]));
+  }, [devRoundEffectSelection, queueRoundEffectsForNextRound]);
+
+  const queueAllRoundEffects = useCallback(() => {
+    const allEffects = DEV_ROUND_EFFECT_OPTIONS;
+    setDevRoundEffectSelection({ mirror: true, blindness: true });
+    queueRoundEffectsForNextRound(allEffects);
+  }, [queueRoundEffectsForNextRound]);
+
+  const toggleDevRoundEffectSelection = useCallback((kind: RoundEffectKind) => {
+    setDevRoundEffectSelection((current) => ({ ...current, [kind]: !current[kind] }));
+  }, []);
 
   const spawnScoreFlight = useCallback((points: number) => {
     const stage = stageRef.current;
@@ -725,6 +865,87 @@ export function AthleteStage({
     spawnScoreFlight(points);
   }, [spawnScoreFlight]);
 
+  const applyRoundEffectsNow = useCallback(
+    (effects: readonly RoundEffectKind[]) => {
+      if (defeatedRef.current) {
+        return;
+      }
+
+      const selected = uniqueRoundEffects(effects);
+      if (selected.length === 0) {
+        return;
+      }
+
+      selected.forEach((kind) => {
+        activateSaboteurPowerup(kind, queuedSaboteurDurationsRef.current[kind] ?? DEFAULT_POWERUP_DURATION_MS);
+        delete queuedSaboteurDurationsRef.current[kind];
+      });
+    },
+    [activateSaboteurPowerup]
+  );
+
+  const clearRoundEffectQueue = useCallback(() => {
+    if (roundIntroTimerRef.current) {
+      window.clearTimeout(roundIntroTimerRef.current);
+      roundIntroTimerRef.current = null;
+    }
+
+    queuedRoundEffectsRef.current = [];
+    queuedRoundEffectCycleRef.current = null;
+    queuedSaboteurDurationsRef.current = {};
+    roundIntroEffectsRef.current = [];
+    roundIntroActiveRef.current = false;
+    setRoundIntroEffects([]);
+  }, []);
+
+  const finishRoundEffectIntro = useCallback(
+    (effects: readonly RoundEffectKind[]) => {
+      if (roundIntroTimerRef.current) {
+        window.clearTimeout(roundIntroTimerRef.current);
+      }
+      roundIntroTimerRef.current = null;
+      if (!defeatedRef.current) {
+        applyRoundEffectsNow(effects);
+      }
+      roundIntroEffectsRef.current = [];
+      setRoundIntroEffects([]);
+      roundIntroActiveRef.current = false;
+    },
+    [applyRoundEffectsNow]
+  );
+
+  const beginRoundEffectIntro = useCallback(
+    (effects: readonly RoundEffectKind[], timing: RoundIntroTiming) => {
+      if (defeatedRef.current) {
+        return;
+      }
+
+      const selected = uniqueRoundEffects(effects);
+      if (selected.length === 0) {
+        return;
+      }
+
+      if (roundIntroActiveRef.current) {
+        queuedRoundEffectsRef.current = uniqueRoundEffects([...queuedRoundEffectsRef.current, ...selected]);
+        queuedRoundEffectCycleRef.current = null;
+        return;
+      }
+
+      if (roundIntroTimerRef.current) {
+        window.clearTimeout(roundIntroTimerRef.current);
+      }
+
+      roundIntroActiveRef.current = true;
+      roundIntroEffectsRef.current = selected;
+      setRoundIntroTimingState(timing);
+      setRoundIntroEffects(selected);
+      roundIntroTimerRef.current = window.setTimeout(() => {
+        finishRoundEffectIntro(selected);
+      }, timing.durationMs + ROUND_EFFECT_INTRO_FALLBACK_PAD_MS);
+    },
+    [finishRoundEffectIntro]
+  );
+
   const stop = useCallback(() => {
     const wasActive = Boolean(stopLoopRef.current || streamRef.current);
     stopLoopRef.current?.();
@@ -732,13 +953,14 @@ export function AthleteStage({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     dummyRenderRef.current = null;
+    clearRoundEffectQueue();
     if (wasActive) {
       setRunning(false);
       setStatus("Stopped");
       setGuidance(null);
       setDebugInfo(null);
     }
-  }, []);
+  }, [clearRoundEffectQueue]);
 
   useEffect(() => stop, [stop]);
 
@@ -750,13 +972,16 @@ export function AthleteStage({
 
   useEffect(
     () => () => {
-      if (powerupTimerRef.current) {
-        window.clearTimeout(powerupTimerRef.current);
-      }
+      clearRoundEffectQueue();
+      Object.values(saboteurPowerupTimersRef.current).forEach((timerId) => {
+        if (timerId) {
+          window.clearTimeout(timerId);
+        }
+      });
       scoreFlightTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
       scoreFlightTimersRef.current = [];
     },
-    []
+    [clearRoundEffectQueue]
   );
 
   useEffect(() => {
@@ -773,17 +998,54 @@ export function AthleteStage({
   }, [playingSessionKey]);
 
   useEffect(() => {
-    if (!powerupActivation) {
+    if (!powerupActivation || defeatedRef.current) {
       return;
     }
 
     const duration = powerupActivation.durationMs ?? DEFAULT_POWERUP_DURATION_MS;
-    setActivePowerup(powerupActivation.kind);
-    if (powerupTimerRef.current) {
-      window.clearTimeout(powerupTimerRef.current);
+    const activationKey = `${powerupActivation.kind}:${powerupActivation.sentAt}`;
+    if (lastPowerupActivationKeyRef.current === activationKey) {
+      return;
     }
-    powerupTimerRef.current = window.setTimeout(() => setActivePowerup(null), duration);
-  }, [powerupActivation]);
+    lastPowerupActivationKeyRef.current = activationKey;
+    queueRoundEffectsForNextRound([powerupActivation.kind], {
+      currentRest: true,
+      saboteurDurations: { [powerupActivation.kind]: duration }
+    });
+  }, [powerupActivation, queueRoundEffectsForNextRound]);
+
+  useEffect(() => {
+    if (defeatedRef.current) {
+      clearRoundEffectQueue();
+      return;
+    }
+
+    if (roundIntroActiveRef.current) {
+      if (tempo?.phase !== "rest") {
+        finishRoundEffectIntro(roundIntroEffectsRef.current);
+      }
+      return;
+    }
+
+    if (tempo?.phase !== "rest") {
+      setRoundIntroEffects([]);
+      return;
+    }
+
+    const queuedEffects = queuedRoundEffectsRef.current;
+    if (queuedEffects.length > 0 && (queuedRoundEffectCycleRef.current === null || tempo.cycle > queuedRoundEffectCycleRef.current)) {
+      const remainingRestMs = getRemainingRestMs(tempo);
+      const targetTiming = roundIntroTiming(getRestWindowMs(tempo));
+      if (remainingRestMs > targetTiming.durationMs + ROUND_EFFECT_INTRO_START_PAD_MS) {
+        return;
+      }
+
+      queuedRoundEffectsRef.current = [];
+      queuedRoundEffectCycleRef.current = null;
+      beginRoundEffectIntro(queuedEffects, targetTiming);
+      return;
+    }
+  }, [beginRoundEffectIntro, clearRoundEffectQueue, finishRoundEffectIntro, tempo]);
 
   const getScoringHoleTarget = useCallback(() => {
     return visibleHoleRef.current ?? targetRef.current;
@@ -840,6 +1102,7 @@ export function AthleteStage({
     }
 
     defeatedRef.current = true;
+    clearRoundEffectQueue();
     beginDefeatSequence();
     setShowGameOverOverlay(true);
     stopSoundtrack();
@@ -851,6 +1114,7 @@ export function AthleteStage({
   }, [
     awardCurrentScore,
     beginDefeatSequence,
+    clearRoundEffectQueue,
     getSnapshotMatchPercent,
     onFinishWall,
     playSoundEffect,
@@ -1104,7 +1368,7 @@ export function AthleteStage({
             setBand(scoreBandFromMatch(percent));
           }
 
-          if (activePowerupRef.current === "blindness" && lHip && rHip && now - lastSpotlightUpdate.current > 50) {
+          if (activeSaboteurPowerupsRef.current.includes("blindness") && lHip && rHip && now - lastSpotlightUpdate.current > 50) {
             lastSpotlightUpdate.current = now;
             setSpotlightPct({
               x: (1 - (lHip.x + rHip.x) / 2) * 100,
@@ -1175,6 +1439,54 @@ export function AthleteStage({
           <button className={pillSecondary} type="button" onClick={handleFinishWall}>
             Finish Wall
           </button>
+          <details className="rounded-[16px] border border-[#eadcbb] bg-[#fff9ec]/70 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] [&>summary::-webkit-details-marker]:hidden">
+            <summary className="flex cursor-pointer items-center justify-between gap-3 px-2 py-1 text-sm font-black text-[#2b303b]">
+              <span>Next Round Effects</span>
+              <span className="text-[11px] font-extrabold tracking-[0.1em] text-[#a89a82] uppercase">
+                {DEV_ROUND_EFFECT_OPTIONS.filter((kind) => devRoundEffectSelection[kind]).length} selected
+              </span>
+            </summary>
+            <div className="mt-2 flex flex-col gap-2">
+              {DEV_ROUND_EFFECT_OPTIONS.map((kind) => {
+                const detail = ROUND_EFFECT_DETAILS[kind];
+                const selected = devRoundEffectSelection[kind];
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    aria-pressed={selected}
+                    className={cx(
+                      "flex min-h-10 items-center justify-between gap-2 rounded-[12px] border px-3 py-2 text-sm font-extrabold transition",
+                      selected
+                        ? "border-[#ffc83d] bg-white text-[#2b303b] shadow-[0_4px_10px_rgba(80,55,0,0.14)]"
+                        : "border-[#e8dcc0] bg-white/50 text-[#8a7d66]"
+                    )}
+                    onClick={() => toggleDevRoundEffectSelection(kind)}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cx(
+                          "size-2.5 shrink-0 rounded-full",
+                          detail.tone === "blue" ? "bg-[#62d9ff]" : "bg-[#ff525f]"
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">{detail.name}</span>
+                    </span>
+                    <span className="text-[11px] tracking-[0.08em] uppercase">{selected ? "On" : "Off"}</span>
+                  </button>
+                );
+              })}
+              <div className="grid grid-cols-2 gap-2">
+                <button className={pillSecondary} type="button" onClick={queueSelectedRoundEffects}>
+                  Queue Selected
+                </button>
+                <button className={pillSecondary} type="button" onClick={queueAllRoundEffects}>
+                  Queue All
+                </button>
+              </div>
+            </div>
+          </details>
           <button className={pillSecondary} type="button" onClick={handleLogDebugSnapshot}>
             Log Debug Snapshot
           </button>
@@ -1191,6 +1503,10 @@ export function AthleteStage({
       onSelectPose,
       handleStart,
       handleFinishWall,
+      devRoundEffectSelection,
+      queueSelectedRoundEffects,
+      queueAllRoundEffects,
+      toggleDevRoundEffectSelection,
       handleLogDebugSnapshot,
       showDebugDashboard,
       stop
@@ -1200,11 +1516,15 @@ export function AthleteStage({
 
   const matchColor = BAND_COLOR[band];
   const debugDashboardVisible = devMode && showDebugDashboard;
+  const mirrorActive = activeSaboteurPowerups.includes("mirror");
+  const blindnessActive = activeSaboteurPowerups.includes("blindness");
+  const sabotageVignetteActive = activeSaboteurPowerups.length > 0;
+  const roundIntroVisible = running && roundIntroEffects.length > 0;
 
   return (
     <div ref={stageRef} className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
       <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
-      <div className={cx("relative h-full w-full", activePowerup === "mirror" && "scale-x-[-1]")}>
+      <div className={cx("relative h-full w-full", mirrorActive && "scale-x-[-1]")}>
         <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
 
         {/* 3D dummy renders here (p5.js WEBGL), overlaid on the 2D hole and matched to its
@@ -1218,7 +1538,7 @@ export function AthleteStage({
 
       {debugDashboardVisible ? <PoseDebugPanel info={debugInfo} /> : null}
 
-      {activePowerup === "blindness" ? (
+      {blindnessActive ? (
         <div
           className="pointer-events-none absolute inset-0 z-45"
           style={{
@@ -1227,10 +1547,14 @@ export function AthleteStage({
         />
       ) : null}
 
-      {activePowerup === "mirror" ? (
-        <div className="absolute top-6 left-1/2 z-46 -translate-x-1/2 rounded-full border border-[#64b4ff]/50 bg-[#64b4ff]/20 px-3 py-1 text-xs font-extrabold tracking-widest text-white uppercase">
+      {mirrorActive ? (
+        <div className="absolute top-6 left-1/2 z-46 -translate-x-1/2 rounded-full border border-[#ff626c]/55 bg-[#3a0609]/55 px-3 py-1 text-xs font-extrabold tracking-widest text-white uppercase shadow-[0_0_18px_rgba(255,74,88,0.28)]">
           Mirror Mode
         </div>
+      ) : null}
+
+      {sabotageVignetteActive ? (
+        <div className="dummy-effect-vignette dummy-effect-vignette--red pointer-events-none absolute inset-0 z-46" aria-hidden="true" />
       ) : null}
 
       <div className="pointer-events-none absolute inset-0 z-47 overflow-hidden" aria-hidden="true">
@@ -1271,7 +1595,7 @@ export function AthleteStage({
       </div>
 
       {/* Lives: filled hearts only; rightmost unmounts when a life is lost. */}
-      <div className="absolute bottom-6 left-6 z-42 flex min-w-[10.5rem] items-center gap-2">
+      <div ref={livesRowRef} className="absolute bottom-6 left-6 z-42 flex min-w-[10.5rem] items-center gap-2">
         {Array.from({ length: STARTING_LIVES }).map((_, index) =>
           index < lives ? <HeartIcon key={index} filled /> : null
         )}
@@ -1300,14 +1624,16 @@ export function AthleteStage({
 
       {/* Tempo rest phase (counts 1-4): dim the stage and tell the dummy to wait. The pose
           is revealed when this lifts at count 5. */}
-      {running && tempoPhase === "rest" && (
+      {roundIntroVisible ? (
+        <RoundEffectIntroOverlay effects={roundIntroEffects} timing={roundIntroTimingState} />
+      ) : running && tempoPhase === "rest" ? (
         <div className="pointer-events-none absolute inset-0 z-44 flex flex-col items-center justify-center gap-3 bg-black text-center">
           <span className="text-sm font-extrabold tracking-[0.2em] text-[#ffd65c] uppercase">Rest</span>
           <span className="px-6 text-[clamp(1.8rem,5vw,3.2rem)] font-black text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.7)]">
             Wait for the saboteur…
           </span>
         </div>
-      )}
+      ) : null}
 
       {/* Snapshot flash (count 8): a quick, low-key white pulse over the frozen frame. */}
       <div
@@ -1368,6 +1694,43 @@ function ScoreFlightChip({ flight }: { flight: ScoreFlight }) {
   return (
     <div className="score-flight-chip" style={style}>
       <span>+{flight.points}</span>
+    </div>
+  );
+}
+
+function RoundEffectIntroOverlay({ effects, timing }: { effects: RoundEffectKind[]; timing: RoundIntroTiming }) {
+  const frameTones = Array.from(new Set(effects.map((kind) => ROUND_EFFECT_DETAILS[kind].tone)));
+  const sharedStyle = {
+    "--effect-delay": "0ms",
+    "--effect-duration": `${timing.durationMs}ms`
+  } as CSSProperties;
+
+  return (
+    <div className="round-effect-intro pointer-events-none absolute inset-0 z-48" aria-live="polite">
+      {frameTones.map((tone) => {
+        return (
+          <div key={`${tone}-frame`} className={cx("round-effect-intro-frame", `round-effect-intro-frame--${tone}`)} style={sharedStyle} aria-hidden="true" />
+        );
+      })}
+      <div className="round-effect-intro-stage">
+        {effects.map((kind) => {
+          const detail = ROUND_EFFECT_DETAILS[kind];
+
+          return (
+            <div
+              key={kind}
+              className={cx("round-effect-intro-slide", `round-effect-intro-slide--${detail.tone}`)}
+              style={sharedStyle}
+            >
+              <img className="round-effect-intro-icon" src={detail.asset} alt="" draggable={false} />
+              <div className="round-effect-intro-copy">
+                <strong>{detail.name}</strong>
+                <span>{detail.description}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

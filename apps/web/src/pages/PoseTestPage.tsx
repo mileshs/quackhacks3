@@ -3,13 +3,8 @@ import { GameRole, starterPoses, type UniversalPose } from "@quackhacks/shared";
 import { useNavigate } from "react-router-dom";
 import { AthleteStage } from "../components/AthleteStage";
 import { DummySplash } from "../components/DummySplash";
-import { GameTempoBridge } from "../components/GameTempoBridge";
 import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses } from "../lib/savedPoses";
-<<<<<<< HEAD
-import type { TempoState } from "../lib/tempo";
-=======
->>>>>>> origin/main
 import { secondaryAction } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
 
@@ -19,12 +14,7 @@ export function PoseTestPage() {
   const [previewPose, setPreviewPose] = useState<UniversalPose | null>(null);
   const [selectedId, setSelectedId] = useState(starterPoses[0]?.id ?? "");
   const gameControls = useActiveGame();
-<<<<<<< HEAD
-  const { lastPose, lastPowerup, sendRoundSnapshot } = gameControls;
-  const [tempo, setTempo] = useState<TempoState | null>(null);
-=======
   const { game, lastPose, lastPowerup, sendRoundSnapshot, defeatGame } = gameControls;
->>>>>>> origin/main
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -74,7 +64,6 @@ export function PoseTestPage() {
     <>
       {showSplash ? <DummySplash onDismiss={dismissSplash} /> : null}
       <RoleGameShell role={GameRole.Dummy} controls={gameControls}>
-        <GameTempoBridge onTempo={setTempo} />
         <div className="absolute top-18 right-4 z-10">
           <button className={secondaryAction} type="button" onClick={showIntro}>
             Replay Intro

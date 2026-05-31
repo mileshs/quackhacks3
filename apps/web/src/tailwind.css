@@ -74,6 +74,197 @@
     will-change: transform, opacity, filter;
   }
 
+  .dummy-effect-vignette {
+    --effect-border: rgba(140, 230, 255, 0.4);
+    --effect-soft: rgba(111, 222, 255, 0.28);
+    --effect-deep: rgba(0, 95, 185, 0.2);
+    --effect-side: rgba(121, 229, 255, 0.12);
+    border: 0.18rem solid var(--effect-border);
+    overflow: hidden;
+    background:
+      linear-gradient(90deg, var(--effect-side), transparent 18%, transparent 82%, var(--effect-side)),
+      radial-gradient(circle at 50% 52%, transparent 0%, transparent 62%, var(--effect-deep) 100%);
+    box-shadow:
+      inset 0 0 3.2rem var(--effect-soft),
+      inset 0 0 8rem var(--effect-deep),
+      0 0 2.5rem var(--effect-soft);
+    animation: dummy-effect-vignette-in 2.4s ease both;
+  }
+
+  .dummy-effect-vignette::before,
+  .dummy-effect-vignette::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: min(6.5rem, 13vw);
+    background: linear-gradient(90deg, transparent, var(--effect-border), transparent);
+    filter: blur(0.25rem);
+    opacity: 0;
+    animation: dummy-effect-side-flash 2.4s ease both;
+  }
+
+  .dummy-effect-vignette::before {
+    left: -1.6rem;
+  }
+
+  .dummy-effect-vignette::after {
+    right: -1.6rem;
+    animation-delay: 0.12s;
+  }
+
+  .dummy-effect-vignette--blue {
+    --effect-border: rgba(127, 226, 255, 0.52);
+    --effect-soft: rgba(111, 222, 255, 0.28);
+    --effect-deep: rgba(0, 95, 185, 0.2);
+    --effect-side: rgba(121, 229, 255, 0.12);
+  }
+
+  .dummy-effect-vignette--red {
+    --effect-border: rgba(255, 82, 95, 0.5);
+    --effect-soft: rgba(255, 68, 86, 0.26);
+    --effect-deep: rgba(130, 4, 12, 0.22);
+    --effect-side: rgba(255, 82, 95, 0.1);
+  }
+
+  .round-effect-intro {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #000;
+    color: white;
+  }
+
+  .round-effect-intro::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.08), transparent 32%),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.04), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.04));
+    opacity: 0.8;
+  }
+
+  .round-effect-intro-frame {
+    --intro-a: rgba(127, 226, 255, 0.88);
+    --intro-b: rgba(42, 129, 255, 0.26);
+    --effect-delay: 0ms;
+    --effect-duration: 1350ms;
+    position: absolute;
+    inset: 0;
+    border: 0.18rem solid color-mix(in srgb, var(--intro-a), transparent 46%);
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--intro-a), transparent 88%), transparent 22%, transparent 78%, color-mix(in srgb, var(--intro-a), transparent 88%)),
+      radial-gradient(circle at 50% 52%, transparent 0%, transparent 58%, color-mix(in srgb, var(--intro-b), transparent 30%) 100%);
+    box-shadow:
+      inset 0 0 3rem color-mix(in srgb, var(--intro-a), transparent 76%),
+      inset 0 0 7rem color-mix(in srgb, var(--intro-b), transparent 60%);
+    opacity: 0;
+    animation: round-effect-frame var(--effect-duration) ease var(--effect-delay) both;
+  }
+
+  .round-effect-intro-frame::before,
+  .round-effect-intro-frame::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: min(7rem, 14vw);
+    background: linear-gradient(90deg, transparent, var(--intro-a), transparent);
+    filter: blur(0.2rem);
+    opacity: 0;
+    animation: round-effect-frame-flash var(--effect-duration) ease var(--effect-delay) both;
+  }
+
+  .round-effect-intro-frame::before {
+    left: -1.8rem;
+  }
+
+  .round-effect-intro-frame::after {
+    right: -1.8rem;
+    animation-delay: calc(var(--effect-delay) + 120ms);
+  }
+
+  .round-effect-intro-frame--red,
+  .round-effect-intro-slide--red {
+    --intro-a: rgba(255, 82, 95, 0.94);
+    --intro-b: rgba(126, 9, 17, 0.38);
+  }
+
+  .round-effect-intro-frame--blue,
+  .round-effect-intro-slide--blue {
+    --intro-a: rgba(127, 226, 255, 0.94);
+    --intro-b: rgba(42, 129, 255, 0.38);
+  }
+
+  .round-effect-intro-stage {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    width: min(64rem, calc(100vw - 2rem));
+    min-height: min(25rem, 72vh);
+    align-items: center;
+    justify-content: center;
+    gap: clamp(1.1rem, 4vw, 3.4rem);
+    padding-inline: 1rem;
+  }
+
+  .round-effect-intro-slide {
+    --intro-a: rgba(127, 226, 255, 0.88);
+    --intro-b: rgba(42, 129, 255, 0.26);
+    --effect-delay: 0ms;
+    --effect-duration: 1350ms;
+    position: relative;
+    display: grid;
+    width: clamp(9rem, 24vw, 16rem);
+    min-width: 0;
+    justify-items: center;
+    gap: clamp(0.42rem, 1vw, 0.7rem);
+    text-align: center;
+    opacity: 0;
+    transform: translateY(1rem) scale(0.95);
+    animation: round-effect-slide var(--effect-duration) cubic-bezier(0.16, 1, 0.3, 1) var(--effect-delay) both;
+  }
+
+  .round-effect-intro-icon {
+    width: clamp(8.6rem, 22vw, 15rem);
+    height: auto;
+    user-select: none;
+    filter:
+      drop-shadow(0 0 1.1rem color-mix(in srgb, var(--intro-a), transparent 34%))
+      drop-shadow(0 1rem 1.35rem rgba(0, 0, 0, 0.48));
+    animation: round-effect-icon-pulse var(--effect-duration) ease var(--effect-delay) both;
+  }
+
+  .round-effect-intro-copy {
+    display: grid;
+    justify-items: center;
+    min-width: 0;
+    gap: 0.28rem;
+  }
+
+  .round-effect-intro-copy strong {
+    font-family: Nunito, Inter, ui-sans-serif, system-ui, sans-serif;
+    font-size: clamp(1.05rem, 3.1vw, 2.15rem);
+    font-weight: 950;
+    line-height: 0.94;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow:
+      0 0 1.1rem color-mix(in srgb, var(--intro-a), transparent 46%),
+      0 0.35rem 1.2rem rgba(0, 0, 0, 0.7);
+  }
+
+  .round-effect-intro-copy > span:last-child {
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    max-width: 14rem;
+    font-size: clamp(0.72rem, 1.3vw, 0.9rem);
+    font-weight: 800;
+    line-height: 1.2;
+    color: rgba(255, 255, 255, 0.76);
+  }
+
   .sabotage-splash {
     position: fixed;
     inset: 0;
@@ -551,6 +742,44 @@
   }
 }
 
+@keyframes dummy-effect-vignette-in {
+  0% {
+    opacity: 0;
+    filter: saturate(1) brightness(1);
+  }
+  12% {
+    opacity: 1;
+    filter: saturate(1.45) brightness(1.18);
+  }
+  72% {
+    opacity: 0.82;
+  }
+  100% {
+    opacity: 0;
+    filter: saturate(1) brightness(1);
+  }
+}
+
+@keyframes dummy-effect-side-flash {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translateX(-0.8rem);
+  }
+  28% {
+    opacity: 0.9;
+    transform: translateX(0);
+  }
+  48% {
+    opacity: 0.18;
+    transform: translateX(0.6rem);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+}
+
 @keyframes saboteur-tutorial-in {
   from {
     opacity: 0;
@@ -647,6 +876,83 @@
   }
   50% {
     box-shadow: 0 0 38px rgba(255, 210, 74, 0.95);
+  }
+}
+
+@keyframes round-effect-frame {
+  0% {
+    opacity: 0;
+    filter: brightness(0.92) saturate(1);
+  }
+  18% {
+    opacity: 1;
+    filter: brightness(1.18) saturate(1.18);
+  }
+  76% {
+    opacity: 0.86;
+    filter: brightness(1.04) saturate(1.08);
+  }
+  100% {
+    opacity: 0;
+    filter: brightness(1) saturate(1);
+  }
+}
+
+@keyframes round-effect-frame-flash {
+  0%,
+  10% {
+    opacity: 0;
+    transform: translateX(-0.7rem);
+  }
+  25% {
+    opacity: 0.92;
+    transform: translateX(0);
+  }
+  48% {
+    opacity: 0.1;
+    transform: translateX(0.7rem);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+}
+
+@keyframes round-effect-slide {
+  0% {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.95);
+    filter: brightness(0.92) saturate(1);
+  }
+  16% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: brightness(1.18) saturate(1.12);
+  }
+  76% {
+    opacity: 1;
+    transform: translateY(0) scale(0.985);
+    filter: brightness(1.02) saturate(1.04);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-0.9rem) scale(0.96);
+    filter: brightness(1) saturate(1);
+  }
+}
+
+@keyframes round-effect-icon-pulse {
+  0% {
+    transform: scale(0.94);
+  }
+  18% {
+    transform: scale(1.03);
+  }
+  76% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(0.95);
   }
 }
 
@@ -786,7 +1092,15 @@
   .dummy-splash::before,
   .dummy-title span,
   .dummy-glow,
-  .dummy-cta {
+  .dummy-cta,
+  .dummy-effect-vignette,
+  .dummy-effect-vignette::before,
+  .dummy-effect-vignette::after,
+  .round-effect-intro-frame,
+  .round-effect-intro-frame::before,
+  .round-effect-intro-frame::after,
+  .round-effect-intro-slide,
+  .round-effect-intro-icon {
     animation-duration: 0.001s;
     animation-iteration-count: 1;
   }

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mirror mode power-up">
+  <defs>
+    <radialGradient id="mirrorCore" cx="48%" cy="32%" r="70%">
+      <stop offset="0" stop-color="#ffb7b7"/>
+      <stop offset="0.36" stop-color="#561818"/>
+      <stop offset="1" stop-color="#160607"/>
+    </radialGradient>
+    <linearGradient id="mirrorRing" x1="93" y1="70" x2="399" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff7772"/>
+      <stop offset="0.28" stop-color="#ff211d"/>
+      <stop offset="0.7" stop-color="#a60008"/>
+      <stop offset="1" stop-color="#5b0008"/>
+    </linearGradient>
+    <filter id="mirrorShadow" x="-22%" y="-20%" width="144%" height="148%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#4c0005" flood-opacity="0.52"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#ff5a50" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="none"/>
+  <g filter="url(#mirrorShadow)">
+    <circle cx="248" cy="260" r="176" fill="url(#mirrorRing)"/>
+    <circle cx="248" cy="260" r="141" fill="#3b090c"/>
+    <circle cx="248" cy="260" r="128" fill="url(#mirrorCore)"/>
+    <path d="M248 134v252" stroke="#ff5d5b" stroke-linecap="round" stroke-width="8"/>
+    <path d="M248 134v252" stroke="#fff0ed" stroke-linecap="round" stroke-width="3" opacity="0.75"/>
+    <path d="M206 220h-45l54-54 54 54h-45v74h-18z" fill="#ff332c" stroke="#ff8c82" stroke-linejoin="round" stroke-width="9" transform="rotate(-90 215 230)"/>
+    <path d="M291 220h-45l54-54 54 54h-45v74h-18z" fill="#ff332c" stroke="#ff8c82" stroke-linejoin="round" stroke-width="9" transform="rotate(90 300 230)"/>
+    <path d="M142 142c55-44 146-52 213-12" fill="none" stroke="#ffb2ad" stroke-linecap="round" stroke-width="18" opacity="0.44"/>
+    <circle cx="390" cy="133" r="72" fill="#fff3d1"/>
+    <circle cx="390" cy="133" r="54" fill="#119cff"/>
+    <path d="M390 101v64M358 133h64" fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="24"/>
+  </g>
+</svg>

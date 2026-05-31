@@ -6,7 +6,6 @@ import {
   LOOPING_SOUNDTRACK_IDS,
   SOUND_EFFECT_ASSETS,
   SOUNDTRACK_ASSETS,
-  startTimeWarp,
   type SoundEffectId,
   type SoundtrackId,
 } from "../lib/audioEngine";
@@ -41,7 +40,8 @@ type SoundContextValue = {
   stopExclusiveSoundEffect: () => void;
   playSoundtrack: (id: SoundtrackId) => void;
   stopSoundtrack: () => void;
-  triggerTimeWarp: () => void;
+  pauseCurrentSoundtrack: () => boolean;
+  resumeCurrentSoundtrack: () => boolean;
   getCurrentSoundtrack: () => HTMLAudioElement | null;
   /** Cached soundtrack element (may not be playing); used for tempo metadata on non-dummy screens. */
   getSoundtrackElement: (id: SoundtrackId) => HTMLAudioElement;
@@ -80,7 +80,6 @@ export function SoundProvider({ children }: { children: ReactNode }) {
   const soundEffectRefs = useRef<Partial<Record<SoundEffectId, HTMLAudioElement>>>({});
   const exclusiveSfxRef = useRef<HTMLAudioElement | null>(null);
   const exclusiveSfxEndedHandlerRef = useRef<(() => void) | null>(null);
-  const timeWarpCancelRef = useRef<(() => void) | null>(null);
 
   const [soundtrackVolume, setSoundtrackVolumeState] = useState(() => readInitialVolume(soundtrackVolumeStorageKey));
   const [soundEffectsVolume, setSoundEffectsVolumeState] = useState(() => readInitialVolume(soundEffectsVolumeStorageKey));
@@ -123,9 +122,6 @@ export function SoundProvider({ children }: { children: ReactNode }) {
   }, [activeSoundtrackId]);
 
   const stopSoundtrack = useCallback(() => {
-    timeWarpCancelRef.current?.();
-    timeWarpCancelRef.current = null;
-
     for (const soundtrack of Object.values(soundtrackRefs.current)) {
       soundtrack?.pause();
       if (soundtrack) {
@@ -139,11 +135,30 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     setTempo({ beat: 0, bpm: 0 });
   }, []);
 
+  const pauseCurrentSoundtrack = useCallback(() => {
+    const soundtrack = getCurrentSoundtrack();
+    if (!soundtrack || soundtrack.paused) {
+      return false;
+    }
+
+    soundtrack.pause();
+    return true;
+  }, [getCurrentSoundtrack]);
+
+  const resumeCurrentSoundtrack = useCallback(() => {
+    const soundtrack = getCurrentSoundtrack();
+    if (!soundtrack || activeSoundtrackId === null || !soundtrack.paused) {
+      return false;
+    }
+
+    soundtrack.play().catch((err) => {
+      console.warn("Soundtrack resume blocked or failed:", err);
+    });
+    return true;
+  }, [activeSoundtrackId, getCurrentSoundtrack]);
+
   const playSoundtrack = useCallback(
     (id: SoundtrackId) => {
-      timeWarpCancelRef.current?.();
-      timeWarpCancelRef.current = null;
-
       for (const [soundtrackId, soundtrack] of Object.entries(soundtrackRefs.current)) {
         if (soundtrackId !== id) {
           soundtrack?.pause();
@@ -252,20 +267,6 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     [getSoundEffect]
   );
 
-  const triggerTimeWarp = useCallback(() => {
-    timeWarpCancelRef.current?.();
-    timeWarpCancelRef.current = null;
-
-    const soundtrack = getCurrentSoundtrack();
-    if (!soundtrack) {
-      return;
-    }
-
-    timeWarpCancelRef.current = startTimeWarp(soundtrack, getSoundEffect("timeWarp"), {
-      masterVolume: soundEffectsVolume / 100,
-    });
-  }, [getCurrentSoundtrack, getSoundEffect, soundEffectsVolume]);
-
   useEffect(() => {
     for (const soundtrack of Object.values(soundtrackRefs.current)) {
       if (soundtrack) {
@@ -344,8 +345,6 @@ export function SoundProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => {
-      timeWarpCancelRef.current?.();
-
       for (const soundtrack of Object.values(soundtrackRefs.current)) {
         soundtrack?.pause();
       }
@@ -370,7 +369,8 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       stopExclusiveSoundEffect,
       playSoundtrack,
       stopSoundtrack,
-      triggerTimeWarp,
+      pauseCurrentSoundtrack,
+      resumeCurrentSoundtrack,
       getCurrentSoundtrack,
       getSoundtrackElement: getSoundtrack,
     }),
@@ -387,7 +387,8 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       stopExclusiveSoundEffect,
       playSoundtrack,
       stopSoundtrack,
-      triggerTimeWarp,
+      pauseCurrentSoundtrack,
+      resumeCurrentSoundtrack,
       getCurrentSoundtrack,
       getSoundtrack,
     ]

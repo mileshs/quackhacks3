@@ -114,7 +114,7 @@ export function tempoAt(
 
 function readPlaybackFromSoundtrack(getCurrentSoundtrack: () => HTMLAudioElement | null): PlaybackPosition | null {
   const soundtrack = getCurrentSoundtrack();
-  if (!soundtrack || soundtrack.paused || !Number.isFinite(soundtrack.duration) || soundtrack.duration <= 0) {
+  if (!soundtrack || !Number.isFinite(soundtrack.duration) || soundtrack.duration <= 0) {
     return null;
   }
 

@@ -18,7 +18,7 @@ export function TempoIndicator({ tempo }: { tempo: TempoState | null }) {
   }
 
   return (
-    <div className="pointer-events-none fixed top-3 left-1/2 z-[45] -translate-x-1/2 font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif]">
+    <div className="pointer-events-none fixed top-3 left-1/2 z-[45] flex -translate-x-1/2 items-center font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif]">
       <div className="flex items-center gap-2 rounded-full bg-[#0c0f14]/55 px-4 py-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1),0_8px_22px_rgba(0,0,0,0.4)] backdrop-blur-md">
         {Array.from({ length: BEATS_PER_CYCLE }).map((_, index) => {
           const count = index + 1;

@@ -20,14 +20,11 @@ export const SOUND_EFFECT_ASSETS = {
   healthChip: "/assets/health_chip.mp3",
   icicleFreeze: "/assets/icicle_freeze.mp3",
   perfect: "/assets/perfect.mp3",
-  shieldBreak: "/assets/shield_break.mp3",
-  shieldUp: "/assets/shield_up.mp3",
   skeletonAdjustment1: "/assets/skeleton_adjustment1.mp3",
   skeletonAdjustment2: "/assets/skeleton_adjustment2.mp3",
   skeletonAdjustment3: "/assets/skeleton_adjustment3.mp3",
   skeletonAdjustment4: "/assets/skeleton_adjustment4.mp3",
   skeletonAdjustment5: "/assets/skeleton_adjustment5.mp3",
-  timeWarp: "/assets/time_warp.mp3",
   wtf: "/assets/wtf.mp3",
 } as const;
 
@@ -73,12 +70,6 @@ export function canPlaySoundEffect(id: SoundEffectId, role: GameRole | null): bo
 
   return true;
 }
-
-/** @deprecated Prefer SOUNDTRACK_ASSETS / SOUND_EFFECT_ASSETS */
-export const AUDIO_ASSETS = {
-  soundtrackSpeedy: SOUNDTRACK_ASSETS.speedy,
-  timeWarp: SOUND_EFFECT_ASSETS.timeWarp,
-} as const;
 
 // --- Soundtrack tempo map (soundtrack_speedy) ---
 // The song starts at 140 BPM and every 16 beats the tempo steps up by 7.5 BPM,
@@ -219,59 +210,4 @@ function setPreservesPitch(track: HTMLAudioElement, value: boolean): void {
 export function applyNeutralSoundtrackPlayback(track: HTMLAudioElement): void {
   track.playbackRate = 1;
   setPreservesPitch(track, true);
-}
-
-// --- Time Warp ---
-// time_warp.mp3 was recorded as `durationBeats` beats at `sfxBaseBpm`. On
-// trigger it is rate-scaled by currentBpm / sfxBaseBpm. The song slows via
-// playbackRate while preservePitchDuringWarp keeps the soundtrack's pitch intact.
-export const TIME_WARP = {
-  durationBeats: 3,
-  sfxBaseBpm: 140,
-  sfxBaseSeconds: 2.638, // measured fallback if the SFX element's duration is unavailable
-  songPlaybackRate: 0.5,
-  preservePitchDuringWarp: true,
-  preserveSfxPitch: false, // false => the SFX pitches with its speed change
-  sfxVolumeScale: 0.5,
-};
-
-export interface TimeWarpConfig {
-  masterVolume: number; // 0..1
-}
-
-// Triggers the time warp. Returns a cancel fn that restores the song immediately.
-export function startTimeWarp(
-  soundtrack: HTMLAudioElement,
-  sfx: HTMLAudioElement,
-  config: TimeWarpConfig
-): () => void {
-  const currentBpm = getBpmAtTime(soundtrack.currentTime, soundtrack.duration);
-  const sfxRate = currentBpm / TIME_WARP.sfxBaseBpm;
-
-  sfx.playbackRate = sfxRate;
-  setPreservesPitch(sfx, TIME_WARP.preserveSfxPitch);
-  sfx.volume = config.masterVolume * TIME_WARP.sfxVolumeScale;
-  sfx.currentTime = 0;
-  sfx.play().catch((err) => {
-    console.warn("Time warp SFX blocked or failed:", err);
-  });
-
-  // The warp effect lasts exactly as long as the rate-scaled SFX plays.
-  const sfxSeconds =
-    Number.isFinite(sfx.duration) && sfx.duration > 0 ? sfx.duration : TIME_WARP.sfxBaseSeconds;
-  const warpDurationMs = (sfxSeconds / sfxRate) * 1000;
-
-  setPreservesPitch(soundtrack, TIME_WARP.preservePitchDuringWarp);
-  soundtrack.playbackRate = TIME_WARP.songPlaybackRate;
-
-  const restore = () => {
-    applyNeutralSoundtrackPlayback(soundtrack);
-  };
-
-  const timeoutId = window.setTimeout(restore, warpDurationMs);
-
-  return () => {
-    window.clearTimeout(timeoutId);
-    restore();
-  };
 }

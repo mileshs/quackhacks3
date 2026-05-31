@@ -1,30 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioVolumeControls } from "../components/AudioVolumeControls";
-import { applyNeutralSoundtrackPlayback, AUDIO_ASSETS, getBeatAtTime, getBpmAtTime, startTimeWarp } from "../lib/audioEngine";
+import { applyNeutralSoundtrackPlayback, getBeatAtTime, getBpmAtTime, SOUNDTRACK_ASSETS } from "../lib/audioEngine";
 import { useSound } from "../providers/SoundProvider";
-import { cx, eyebrow, pageGrid, pageTitle, primaryAction, secondaryAction } from "../lib/ui";
+import { cx, eyebrow, pageGrid, pageTitle, primaryAction } from "../lib/ui";
 
-const TEST_SOUND_PATH = "/assets/shield_up.mp3";
+const TEST_SOUND_PATH = "/assets/button_click.mp3";
 
 export function SettingsPage() {
   const { soundtrackVolume, soundEffectsVolume } = useSound();
   const [tempo, setTempo] = useState({ beat: 0, bpm: 0 });
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const soundtrackRef = useRef<HTMLAudioElement | null>(null);
-  const timeWarpSfxRef = useRef<HTMLAudioElement | null>(null);
-  const timeWarpCancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     audioRef.current = new Audio(TEST_SOUND_PATH);
-    soundtrackRef.current = new Audio(AUDIO_ASSETS.soundtrackSpeedy);
+    soundtrackRef.current = new Audio(SOUNDTRACK_ASSETS.speedy);
     applyNeutralSoundtrackPlayback(soundtrackRef.current);
-    timeWarpSfxRef.current = new Audio(AUDIO_ASSETS.timeWarp);
 
     return () => {
-      timeWarpCancelRef.current?.();
-      timeWarpCancelRef.current = null;
-
-      for (const ref of [audioRef, soundtrackRef, timeWarpSfxRef]) {
+      for (const ref of [audioRef, soundtrackRef]) {
         if (ref.current) {
           ref.current.pause();
           ref.current = null;
@@ -43,9 +37,6 @@ export function SettingsPage() {
     const sfxVolume = soundEffectsVolume / 100;
     if (audioRef.current) {
       audioRef.current.volume = sfxVolume;
-    }
-    if (timeWarpSfxRef.current) {
-      timeWarpSfxRef.current.volume = sfxVolume;
     }
   }, [soundEffectsVolume]);
 
@@ -89,17 +80,6 @@ export function SettingsPage() {
     });
   }
 
-  function triggerTimeWarp() {
-    timeWarpCancelRef.current?.();
-    timeWarpCancelRef.current = null;
-
-    if (soundtrackRef.current && timeWarpSfxRef.current) {
-      timeWarpCancelRef.current = startTimeWarp(soundtrackRef.current, timeWarpSfxRef.current, {
-        masterVolume: soundEffectsVolume / 100,
-      });
-    }
-  }
-
   return (
     <section className={cx(pageGrid, "max-w-[720px]")}>
       <div>
@@ -116,10 +96,6 @@ export function SettingsPage() {
 
         <button className={cx(primaryAction, "max-w-[12.5rem] self-start")} type="button" onClick={playSoundtrack}>
           Play Soundtrack
-        </button>
-
-        <button className={cx(secondaryAction, "max-w-[12.5rem] self-start")} type="button" onClick={triggerTimeWarp}>
-          Time Warp
         </button>
 
         <p className="m-0 font-bold text-[#75e2be] tabular-nums">
