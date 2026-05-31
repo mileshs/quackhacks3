@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type p5 from "p5";
 import {
-  DEFAULT_POWERUP_DURATION_MS,
   GameRole,
   HOLE_PADDING,
   buildBlobFigure,
@@ -11,9 +10,7 @@ import {
   scoreBandFromMatch,
   universalHumanSize,
   type FigurePrimitive,
-  type PowerupActivatePayload,
   type RoundSnapshotPayload,
-  type SaboteurPowerupKind,
   type ScoreBand,
   type UniversalPose
 } from "@quackhacks/shared";
@@ -23,7 +20,6 @@ import {
   startPoseLoop,
   type PoseFrame
 } from "../lib/poseTracker";
-import type { SoundEffectId } from "../lib/audioEngine";
 import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dummy3d";
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import { useDefeatSequence } from "../lib/defeatSequence";
@@ -103,7 +99,6 @@ type AthleteStageProps = {
   savedPoseIds?: string[];
   selectedPoseId?: string;
   onSelectPose?: (pose: UniversalPose) => void;
-  powerupActivation?: PowerupActivatePayload | null;
   onFinishWall?: (payload: RoundSnapshotPayload) => void;
   /** Resets lives when a new playing session starts (e.g. `game.playingStartedAt`). */
   playingSessionKey?: string | null;
@@ -118,11 +113,6 @@ type AthleteStageProps = {
 };
 
 const STARTING_LIVES = 3;
-
-const POWERUP_SFX = {
-  blindness: "blindness",
-  mirror: "mirror"
-} as const satisfies Record<SaboteurPowerupKind, SoundEffectId>;
 
 // The hole keeps a human portrait shape (not stretched to the camera's aspect): a
 // centered "doorway". HOLE_SCALE is the fraction of the frame height it occupies.
@@ -598,7 +588,6 @@ export function AthleteStage({
   savedPoseIds,
   selectedPoseId,
   onSelectPose,
-  powerupActivation,
   onFinishWall,
   playingSessionKey,
   onAllLivesLost,
@@ -667,11 +656,7 @@ export function AthleteStage({
   const { devMode } = useSettings();
   const { invincibleMode } = useEffectiveDevGameplay();
   const lastHandUpdate = useRef(0);
-  const lastSpotlightUpdate = useRef(0);
   const lastDebugUpdate = useRef(0);
-  const powerupTimerRef = useRef<number | null>(null);
-  const [activePowerup, setActivePowerup] = useState<SaboteurPowerupKind | null>(null);
-  const [spotlightPct, setSpotlightPct] = useState({ x: 50, y: 55 });
   const matchPercentRef = useRef(0);
   const runningRef = useRef(false);
   const bandRef = useRef<ScoreBand>("CRASH");
@@ -693,9 +678,6 @@ export function AthleteStage({
   invincibleModeRef.current = invincibleMode;
   const showDebugDashboardRef = useRef(showDebugDashboard);
   showDebugDashboardRef.current = showDebugDashboard;
-  const activePowerupRef = useRef(activePowerup);
-  activePowerupRef.current = activePowerup;
-
   const spawnScoreFlight = useCallback((points: number) => {
     const stage = stageRef.current;
     const target = scoreTargetRef.current;
@@ -772,9 +754,6 @@ export function AthleteStage({
 
   useEffect(
     () => () => {
-      if (powerupTimerRef.current) {
-        window.clearTimeout(powerupTimerRef.current);
-      }
       scoreFlightTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
       scoreFlightTimersRef.current = [];
     },
@@ -793,20 +772,6 @@ export function AthleteStage({
     visibleHoleRef.current = null;
     lastHoleLatchCycleRef.current = null;
   }, [playingSessionKey]);
-
-  useEffect(() => {
-    if (!powerupActivation) {
-      return;
-    }
-
-    const duration = powerupActivation.durationMs ?? DEFAULT_POWERUP_DURATION_MS;
-    setActivePowerup(powerupActivation.kind);
-    playSoundEffect(POWERUP_SFX[powerupActivation.kind]);
-    if (powerupTimerRef.current) {
-      window.clearTimeout(powerupTimerRef.current);
-    }
-    powerupTimerRef.current = window.setTimeout(() => setActivePowerup(null), duration);
-  }, [playSoundEffect, powerupActivation]);
 
   const getScoringHoleTarget = useCallback(() => {
     return visibleHoleRef.current ?? targetRef.current;
@@ -1138,13 +1103,6 @@ export function AthleteStage({
             setBand(scoreBandFromMatch(percent));
           }
 
-          if (activePowerupRef.current === "blindness" && lHip && rHip && now - lastSpotlightUpdate.current > 50) {
-            lastSpotlightUpdate.current = now;
-            setSpotlightPct({
-              x: (1 - (lHip.x + rHip.x) / 2) * 100,
-              y: ((lHip.y + rHip.y) / 2) * 100
-            });
-          }
         },
         handLandmarker
       );
@@ -1253,7 +1211,7 @@ export function AthleteStage({
   return (
     <div ref={stageRef} className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
       <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
-      <div className={cx("relative h-full w-full", activePowerup === "mirror" && "scale-x-[-1]")}>
+      <div className="relative h-full w-full">
         <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
 
         {/* 3D dummy renders here (p5.js WEBGL), overlaid on the 2D hole and matched to its
@@ -1266,21 +1224,6 @@ export function AthleteStage({
       </div>
 
       {debugDashboardVisible ? <PoseDebugPanel info={debugInfo} /> : null}
-
-      {activePowerup === "blindness" ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-45"
-          style={{
-            background: `radial-gradient(circle 130px at ${spotlightPct.x}% ${spotlightPct.y}%, transparent 0%, transparent 42%, rgba(0,0,0,0.88) 62%, #000 100%)`
-          }}
-        />
-      ) : null}
-
-      {activePowerup === "mirror" ? (
-        <div className="absolute top-6 left-1/2 z-46 -translate-x-1/2 rounded-full border border-[#64b4ff]/50 bg-[#64b4ff]/20 px-3 py-1 text-xs font-extrabold tracking-widest text-white uppercase">
-          Mirror Mode
-        </div>
-      ) : null}
 
       <div className="pointer-events-none absolute inset-0 z-47 overflow-hidden" aria-hidden="true">
         {scoreFlights.map((flight) => (

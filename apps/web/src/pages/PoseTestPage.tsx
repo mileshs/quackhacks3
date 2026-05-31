@@ -24,7 +24,7 @@ export function PoseTestPage() {
   const [previewPose, setPreviewPose] = useState<UniversalPose | null>(null);
   const [selectedId, setSelectedId] = useState(starterPoses[0]?.id ?? "");
   const gameControls = useActiveGame();
-  const { game, lastPose, lastPowerup, sendRoundSnapshot, defeatGame } = gameControls;
+  const { game, lastPose, sendRoundSnapshot, defeatGame } = gameControls;
   const [showSplash, setShowSplash] = useState(true);
   const roundIndexRef = useRef(0);
 
@@ -127,7 +127,6 @@ export function PoseTestPage() {
           savedPoseIds={savedPoseIds}
           selectedPoseId={targetPose.id}
           onSelectPose={handleSelectPose}
-          powerupActivation={lastPowerup}
           onFinishWall={sendRoundSnapshot}
           playingSessionKey={game?.playingStartedAt ?? null}
           onAllLivesLost={handleAllLivesLost}

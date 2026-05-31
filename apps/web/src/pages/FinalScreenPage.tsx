@@ -198,14 +198,14 @@ function CaptureFrameCard({ frame, dark }: { frame: GameCaptureFrame; dark: bool
     >
       <div className="relative aspect-video w-full">
         <img
-          alt={`Webcam snapshot for ${frame.poseName}`}
+          alt={`In-game screenshot for ${frame.poseName}`}
           className="absolute inset-0 size-full object-cover transition-opacity duration-200 group-hover:opacity-0"
-          src={frame.snapshotDataUrl}
+          src={frame.screenshotDataUrl}
         />
         <img
-          alt={`In-game screenshot for ${frame.poseName}`}
+          alt={`Webcam snapshot for ${frame.poseName}`}
           className="absolute inset-0 size-full object-cover opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-          src={frame.screenshotDataUrl}
+          src={frame.snapshotDataUrl}
         />
       </div>
       <figcaption
@@ -259,17 +259,12 @@ function GameCaptureGallery({
           dark ? "text-[#b8b0a8]" : "text-[#6c6353]"
         )}
       >
-        Pose gallery · {frames.length} shot{frames.length === 1 ? "" : "s"} · hover for in-game view
+        Pose gallery · {frames.length} shot{frames.length === 1 ? "" : "s"} · hover for your photo
       </p>
-      <div
-        className={cx(
-          "overflow-x-auto overflow-y-hidden rounded-[1.1rem] py-2",
-          dark ? "bg-[#2a2624]/50" : "bg-[#fff4df]/60"
-        )}
-      >
+      <div className="overflow-x-auto overflow-y-hidden py-2">
         <div
           className={cx(
-            "flex w-max min-w-full gap-3 px-3",
+            "flex w-max min-w-full justify-center gap-3 px-3",
             shouldAnimate && "motion-safe:animate-capture-marquee motion-reduce:overflow-x-auto"
           )}
         >

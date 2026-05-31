@@ -19,7 +19,6 @@ export function useActiveGame() {
   const [roleError, setRoleError] = useState<string | null>(null);
   const [lastPose, setLastPose] = useState<UniversalPose | null>(null);
   const [lastRoundSnapshot, setLastRoundSnapshot] = useState<RoundSnapshotPayload | null>(null);
-  const [lastPowerup, setLastPowerup] = useState<PowerupActivatePayload | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const pendingMessagesRef = useRef<GameClientMessage[]>([]);
 
@@ -71,9 +70,6 @@ export function useActiveGame() {
         setLastRoundSnapshot(message.payload);
       }
 
-      if (message?.type === "powerup:activate") {
-        setLastPowerup(message.payload);
-      }
     });
 
     socket.addEventListener("close", () => {
@@ -102,7 +98,6 @@ export function useActiveGame() {
     roleError,
     lastPose,
     lastRoundSnapshot,
-    lastPowerup,
     startGame: useCallback(() => send({ type: "game:start" }), [send]),
     endGame: useCallback(() => send({ type: "game:end" }), [send]),
     completeGame: useCallback(() => send({ type: "game:complete" }), [send]),
