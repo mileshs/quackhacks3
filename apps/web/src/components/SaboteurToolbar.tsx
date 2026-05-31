@@ -7,12 +7,10 @@ import {
   SendPoseIcon
 } from "./SaboteurIconButton";
 import { SaboteurToolButton } from "./SaboteurToolButton";
-import { cx, panel } from "../lib/ui";
 
 type SaboteurToolbarProps = {
   draftActive: boolean;
   showHole: boolean;
-  saveError: string | null;
   onMakePose: () => void;
   onEditPose: () => void;
   onCancelDraft: () => void;
@@ -24,7 +22,6 @@ type SaboteurToolbarProps = {
 export function SaboteurToolbar({
   draftActive,
   showHole,
-  saveError,
   onMakePose,
   onEditPose,
   onCancelDraft,
@@ -33,22 +30,21 @@ export function SaboteurToolbar({
   onSendPose
 }: SaboteurToolbarProps) {
   return (
-    <div className={cx(panel, "flex flex-col gap-3 p-4")}>
-      <h3 className="m-0 text-[11px] font-extrabold tracking-[0.14em] text-[#8a8274] uppercase">Saboteur Tools</h3>
-
-      <div className="flex flex-wrap gap-2">
-        <SaboteurToolButton label="Make Pose" hint="Start a fresh T-pose" onClick={onMakePose}>
+    <div className="shrink-0 border-t border-white/8 px-3 py-2.5">
+      <div className="flex flex-wrap justify-center gap-2">
+        <SaboteurToolButton compact label="Make Pose" hint="Start a fresh T-pose" onClick={onMakePose}>
           <MakePoseIcon />
         </SaboteurToolButton>
-        <SaboteurToolButton label="Edit Pose" hint="Drag joints to adjust" onClick={onEditPose} disabled={draftActive}>
+        <SaboteurToolButton compact label="Edit Pose" hint="Drag joints to adjust" onClick={onEditPose} disabled={draftActive}>
           <EditPoseIcon />
         </SaboteurToolButton>
         {draftActive ? (
-          <SaboteurToolButton label="Cancel" hint="Discard changes" onClick={onCancelDraft}>
+          <SaboteurToolButton compact label="Cancel" hint="Discard changes" onClick={onCancelDraft}>
             <CancelPoseIcon />
           </SaboteurToolButton>
         ) : null}
         <SaboteurToolButton
+          compact
           label={showHole ? "Hide Hole" : "Preview Hole"}
           hint="See the wall cutout"
           active={showHole}
@@ -56,19 +52,13 @@ export function SaboteurToolbar({
         >
           <PreviewHoleIcon />
         </SaboteurToolButton>
-        <SaboteurToolButton label="Save Pose" hint="Add to your deck" onClick={onSavePose} disabled={!draftActive}>
+        <SaboteurToolButton compact label="Save Pose" hint="Add to your deck" onClick={onSavePose} disabled={!draftActive}>
           <AddPoseIcon />
         </SaboteurToolButton>
-        <SaboteurToolButton label="Send Pose" hint="Push to the poser" onClick={onSendPose}>
+        <SaboteurToolButton compact label="Send Pose" hint="Push to the poser" onClick={onSendPose}>
           <SendPoseIcon />
         </SaboteurToolButton>
       </div>
-
-      {saveError ? (
-        <p className="m-0 text-sm font-semibold text-[#ff8585]" role="alert">
-          {saveError}
-        </p>
-      ) : null}
     </div>
   );
 }

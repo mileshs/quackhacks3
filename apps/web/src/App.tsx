@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { FinalScreenPage } from "./pages/FinalScreenPage";
 import { GamePage } from "./pages/GamePage";
@@ -8,6 +8,7 @@ import { PoseTestPage } from "./pages/PoseTestPage";
 import { SaboteurPage } from "./pages/SaboteurPage";
 import { ScorePage } from "./pages/ScorePage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { ChromeContext } from "./lib/chrome";
 import { appShell, brand, navLink, navList, topbar } from "./lib/ui";
 
 const navItems = [
@@ -25,21 +26,25 @@ const DevAgentation = import.meta.env.DEV
   : null;
 
 export function App() {
+  const [navHidden, setNavHidden] = useState(false);
+
   return (
-    <>
+    <ChromeContext.Provider value={{ navHidden, setNavHidden }}>
       <div className={appShell}>
-        <header className={topbar}>
-          <NavLink className={brand} to="/">
-            Poses for Dummies
-          </NavLink>
-          <nav className={navList} aria-label="Primary">
-            {navItems.map((item) => (
-              <NavLink className={navLink} key={item.to} to={item.to}>
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-        </header>
+        {navHidden ? null : (
+          <header className={topbar}>
+            <NavLink className={brand} to="/">
+              Poses for Dummies
+            </NavLink>
+            <nav className={navList} aria-label="Primary">
+              {navItems.map((item) => (
+                <NavLink className={navLink} key={item.to} to={item.to}>
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
+          </header>
+        )}
         <main>
           <Routes>
             <Route path="/" element={<HomePage />} />
@@ -58,6 +63,6 @@ export function App() {
           <DevAgentation />
         </Suspense>
       ) : null}
-    </>
+    </ChromeContext.Provider>
   );
 }
