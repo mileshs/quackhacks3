@@ -19,7 +19,71 @@ import {
   startPoseLoop,
   type PoseFrame
 } from "../lib/poseTracker";
-import { cx, largeStatus, primaryAction, secondaryAction } from "../lib/ui";
+import { cx } from "../lib/ui";
+
+// ── "Poses for Dummies" HUD palette ──────────────────────────────────────────
+const INK = "#2b303b"; // dark navy from the logo
+const BAND_COLOR: Record<ScoreBand, string> = {
+  PERFECT: "#2fb86b",
+  CLEAN: "#f0a52e",
+  CRASH: "#ef5c6b"
+};
+
+// Soft cream card, used for the score / match panels.
+const hudCard = "rounded-[18px] bg-[#fdf6e8] shadow-[0_10px_22px_rgba(80,55,0,0.18)]";
+const hudLabel = "block text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#a89a82]";
+
+// Cream pill button (logo-dark text), and a yellow "primary" variant.
+const pillBase =
+  "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[16px] px-4 py-3 font-extrabold text-[#2b303b] no-underline transition-transform active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50";
+const pillSecondary = cx(pillBase, "bg-[#fdf6e8] shadow-[0_6px_14px_rgba(70,50,0,0.16)] hover:bg-white");
+const pillPrimary = cx(pillBase, "bg-[#ffc83d] shadow-[0_6px_14px_rgba(180,120,0,0.3)] hover:brightness-[1.04]");
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-6 shrink-0" fill="#ffc83d" aria-hidden="true">
+      <path d="M12 2.5l2.9 5.9 6.5.95-4.7 4.58 1.1 6.47L12 17.4l-5.8 3.05 1.1-6.47L2.6 9.35l6.5-.95L12 2.5z" />
+    </svg>
+  );
+}
+
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-14 shrink-0 drop-shadow-[0_3px_6px_rgba(0,0,0,0.28)]" aria-hidden="true">
+      <path
+        d="M12 20.5l-1.45-1.32C5.4 14.5 2 11.42 2 7.62 2 4.9 4.13 2.75 6.85 2.75c1.54 0 3.02.72 4 1.86.98-1.14 2.46-1.86 4-1.86C21.57 2.75 23.7 4.9 23.7 7.62c0 .12 0 .24-.02.36C23.46 11.5 20.2 14.5 13.45 19.18L12 20.5z"
+        transform="translate(-1.85 0)"
+        fill={filled ? "#ff5564" : "#e7d9bc"}
+      />
+    </svg>
+  );
+}
+
+function HamburgerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+function FullscreenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-6 shrink-0" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" />
+    </svg>
+  );
+}
+
+/** Small green jumping-jack figure used in the bottom instruction pill. */
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-7 shrink-0" fill="none" stroke="#2fb86b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="4.4" r="2.2" fill="#2fb86b" stroke="none" />
+      <path d="M12 7.4v6M6 9.4l6 1.8 6-1.8M12 13.4l-3.6 6M12 13.4l3.6 6" />
+    </svg>
+  );
+}
 
 type AthleteStageProps = {
   /** The hole/wall the athlete is trying to fit into (from the saboteur, or a preset). */
@@ -185,12 +249,6 @@ function makeOffscreen(): (width: number, height: number) => CanvasRenderingCont
 // over the camera so the carve never erases camera pixels.
 const getWallCtx = makeOffscreen();
 
-const scoreBandClasses = {
-  PERFECT: "border-[#75e2be]/60 text-[#75e2be] [&_.score-bar-fill]:bg-[#75e2be]",
-  CLEAN: "border-[#ffd65c]/60 text-[#ffd65c] [&_.score-bar-fill]:bg-[#ffd65c]",
-  CRASH: "border-[#ef5c6b]/60 text-[#ef5c6b] [&_.score-bar-fill]:bg-[#ef5c6b]"
-} satisfies Record<ScoreBand, string>;
-
 export function AthleteStage({
   targetPose,
   poseOptions,
@@ -209,19 +267,28 @@ export function AthleteStage({
   const targetRef = useRef(targetPose);
   targetRef.current = targetPose;
 
-  const [status, setStatus] = useState("Idle");
+  const [status, setStatus] = useState("Starting…");
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState(false);
   const [matchPercent, setMatchPercent] = useState(0);
   const [band, setBand] = useState<ScoreBand>("CRASH");
+  // Placeholder HUD values until the full game loop is wired in.
+  const [score] = useState(0);
+  const [lives] = useState(3);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDummy, setShowDummy] = useState(true);
-  const [handStates, setHandStates] = useState<boolean[]>([]);
   const [guidance, setGuidance] = useState<string | null>(null);
+  // Temporary dev affordance: when on, the game never pauses for framing and the dummy
+  // tracks the raw live pose instead of being retargeted/anchored onto the hole. Lets
+  // you develop the UI with only your face/shoulders in frame.
+  const [devMode, setDevMode] = useState(false);
   const lastHandUpdate = useRef(0);
 
-  // The render loop reads this through a ref so toggling doesn't rebuild the loop.
+  // The render loop reads these through refs so toggling doesn't rebuild the loop.
   const showDummyRef = useRef(showDummy);
   showDummyRef.current = showDummy;
+  const devModeRef = useRef(devMode);
+  devModeRef.current = devMode;
 
   const stop = useCallback(() => {
     const wasActive = Boolean(stopLoopRef.current || streamRef.current);
@@ -232,12 +299,23 @@ export function AthleteStage({
     if (wasActive) {
       setRunning(false);
       setStatus("Stopped");
-      setHandStates([]);
       setGuidance(null);
     }
   }, []);
 
   useEffect(() => stop, [stop]);
+
+  // Auto-start pose detection on mount instead of waiting for a button. Guarded with a
+  // ref so React StrictMode's double-invoke (and re-renders) don't kick off twice.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) {
+      return;
+    }
+    autoStartedRef.current = true;
+    void start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Preview the target hole on a black backdrop whenever it changes while paused, so
   // the saboteur's edits are visible before the camera is even running.
@@ -257,6 +335,7 @@ export function AthleteStage({
 
   async function start() {
     try {
+      setError(false);
       setStatus("Requesting webcam");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -320,7 +399,13 @@ export function AthleteStage({
           // real proportions. The same pose drives both the drawn dummy and the score.
           const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
           const live = landmarks ? landmarksToUniversalPose(landmarks, aspect, { mirror: true }) : null;
-          const dummyPose = live ? retargetPose(live, targetRef.current) : null;
+          // In dev mode the dummy follows the raw live pose so it never snaps/clips onto
+          // the hole; in normal play it's retargeted onto the hole's exact bone lengths.
+          const dummyPose = live
+            ? devModeRef.current
+              ? live
+              : retargetPose(live, targetRef.current)
+            : null;
 
           // The puppet is hip-anchored to the hole (for fair, position-independent
           // scoring), so track the player's real horizontal frame position separately
@@ -336,8 +421,7 @@ export function AthleteStage({
           const now = performance.now();
           if (now - lastHandUpdate.current > 120) {
             lastHandUpdate.current = now;
-            setHandStates(hands.map((hand) => hand.closed));
-            setGuidance(frameGuidance(landmarks));
+            setGuidance(devModeRef.current ? null : frameGuidance(landmarks));
           }
 
           if (dummyPose && now - lastMatchUpdate.current > 120) {
@@ -349,48 +433,77 @@ export function AthleteStage({
         },
         handLandmarker
       );
-    } catch (error) {
-      setStatus(`Error: ${(error as Error).message}`);
+    } catch (err) {
+      setStatus(`Error: ${(err as Error).message}`);
+      setError(true);
       stop();
     }
   }
+
+  const matchColor = BAND_COLOR[band];
 
   return (
     <div className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
       <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
       <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
 
-      {/* Big accuracy/score bar down the side of the screen. */}
-      <div
+      {/* TEMP dev toggle: sits above everything. In dev mode the game never pauses for
+          framing and the dummy tracks your raw pose instead of clipping to the hole. */}
+      <button
+        type="button"
         className={cx(
-          "absolute top-6 bottom-6 left-5 z-42 flex w-[78px] flex-col items-center gap-2 rounded-[18px] border border-[#f6f4ea]/18 bg-[#05080c]/72 px-2 py-3 font-extrabold backdrop-blur-[10px]",
-          scoreBandClasses[band]
+          "absolute top-4 left-1/2 z-50 min-h-9 -translate-x-1/2 cursor-pointer rounded-full px-4 py-1.5 text-sm font-extrabold shadow-[0_4px_12px_rgba(80,55,0,0.18)] transition-colors",
+          devMode ? "bg-[#2fb86b] text-white" : "bg-[#fdf6e8]/90 text-[#a89a82]"
         )}
+        aria-pressed={devMode}
+        onClick={() => setDevMode((on) => !on)}
       >
-        <span className="text-2xl">{matchPercent}%</span>
-        <div className="relative w-full flex-1 overflow-hidden rounded-full bg-white/10">
-          <div
-            className="score-bar-fill absolute bottom-0 left-0 w-full bg-[#ef5c6b] transition-[height,background] duration-200 ease-linear"
-            style={{ height: `${matchPercent}%` }}
-          />
+        Dev Mode: {devMode ? "On" : "Off"}
+      </button>
+
+      {/* Top-left stack: logo and score. */}
+      <div className="absolute top-4 left-4 z-42 flex w-[214px] flex-col gap-3">
+        <img
+          src="/poses-for-dummies-logo-ai.png"
+          alt="Poses for Dummies"
+          className="w-[200px] drop-shadow-[0_4px_10px_rgba(80,55,0,0.25)] select-none"
+          draggable={false}
+        />
+        <div className={cx(hudCard, "px-4 py-2.5")}>
+          <span className={hudLabel}>Score</span>
+          <div className="mt-0.5 flex items-center gap-2">
+            <StarIcon />
+            <span className="text-[28px] font-black leading-none text-[#2b303b]">{score}</span>
+          </div>
         </div>
-        <span className="text-xs tracking-[0.06em]">{band}</span>
       </div>
 
-      {/* Hand open/closed (grab) indicator. */}
-      {handStates.length > 0 && (
-        <div className="absolute bottom-6 left-24 z-42 flex gap-2">
-          {handStates.map((closed, index) => (
-            <span
-              key={index}
-              className={cx(
-                "rounded-lg border border-[#f6f4ea]/18 bg-[#05080c]/62 px-3 py-2 font-extrabold text-[#d8e2df] backdrop-blur-lg",
-                closed && "border-[#ff2424]/85 bg-[#ff2424]/16 text-[#ff5a5a]"
-              )}
-            >
-              {closed ? "✊ Grab" : "✋ Open"}
-            </span>
-          ))}
+      {/* Match meter down the right side. */}
+      <div className={cx(hudCard, "absolute top-1/2 right-5 z-42 flex h-[300px] w-[128px] -translate-y-1/2 flex-col items-center gap-2 px-4 py-4")}>
+        <span className={hudLabel}>Match</span>
+        <span className="text-[26px] font-black leading-none" style={{ color: matchColor }}>
+          {matchPercent}%
+        </span>
+        <div className="relative w-[72px] flex-1 overflow-hidden rounded-full bg-[#ece0c2] shadow-[inset_0_2px_6px_rgba(120,90,20,0.25)]">
+          <div
+            className="absolute inset-x-0 bottom-0 rounded-full transition-[height,background] duration-200 ease-linear"
+            style={{ height: `${matchPercent}%`, background: matchColor }}
+          />
+        </div>
+      </div>
+
+      {/* Lives: a row of hearts in the bottom-left corner. */}
+      <div className="absolute bottom-6 left-6 z-42 flex items-center gap-2">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <HeartIcon key={index} filled={index < lives} />
+        ))}
+      </div>
+
+      {/* Bottom-center instruction pill. */}
+      {running && !guidance && (
+        <div className={cx(hudCard, "absolute bottom-6 left-1/2 z-42 flex -translate-x-1/2 items-center gap-2 px-5 py-3")}>
+          <PersonIcon />
+          <span className="text-lg font-extrabold text-[#2b303b]">Fit yourself into the hole!</span>
         </div>
       )}
 
@@ -407,34 +520,59 @@ export function AthleteStage({
         </div>
       )}
 
-      {/* Sidebar toggle. */}
+      {/* Controls (sidebar) toggle, top-right. */}
       <button
         type="button"
-        className="absolute top-4 right-4 z-43 min-h-10 cursor-pointer rounded-lg border border-[#f6f4ea]/22 bg-[#05080c]/62 px-4 py-2 font-extrabold text-[#f6f4ea] backdrop-blur-lg"
+        className={cx(pillSecondary, "absolute top-4 right-4 z-43 px-4 py-2.5 text-[13px] uppercase tracking-[0.08em]")}
         aria-expanded={sidebarOpen}
         onClick={() => setSidebarOpen((open) => !open)}
       >
-        {sidebarOpen ? "✕" : "☰ Controls"}
+        <HamburgerIcon />
+        {sidebarOpen ? "Close" : "Controls"}
       </button>
 
-      {/* Big start prompt only while idle. */}
+      {/* Fullscreen toggle, bottom-right circular button. */}
+      <button
+        type="button"
+        className="absolute right-6 bottom-6 z-43 grid size-14 cursor-pointer place-items-center rounded-full bg-[#fdf6e8] shadow-[0_8px_18px_rgba(70,50,0,0.22)] transition-transform active:translate-y-px"
+        aria-label="Toggle fullscreen"
+        onClick={() => toggleFullscreen(canvasRef.current?.parentElement ?? null)}
+      >
+        <FullscreenIcon />
+      </button>
+
+      {/* While loading (before tracking starts): spinner centered over the hole. On a
+          camera/model error: a short message with a retry button. */}
       {!running && (
         <div className="absolute inset-0 z-41 grid place-items-center">
-          <button className={cx(primaryAction, "px-7 py-4 text-xl")} type="button" onClick={start}>
-            Start Pose Detection
-          </button>
+          {error ? (
+            <div className={cx(hudCard, "flex max-w-[300px] flex-col items-center gap-3 px-6 py-5 text-center")}>
+              <span className="text-base font-extrabold text-[#2b303b]">Couldn't start the camera</span>
+              <span className="text-sm font-semibold text-[#a89a82]">Check camera permissions and try again.</span>
+              <button className={cx(pillPrimary, "px-6 py-3")} type="button" onClick={() => void start()}>
+                Try again
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              <span className="size-16 animate-spin rounded-full border-4 border-[#fdf6e8]/40 border-t-[#ffc83d]" />
+              <span className="rounded-full bg-[#fdf6e8]/90 px-4 py-1.5 text-sm font-extrabold text-[#2b303b] shadow-[0_4px_12px_rgba(80,55,0,0.18)]">
+                {status}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
       {/* Slide-out controls. */}
       <aside
         className={cx(
-          "absolute top-0 right-0 z-42 flex h-full w-[min(340px,84vw)] flex-col gap-4 overflow-y-auto border-l border-[#f6f4ea]/16 bg-[#05080c]/92 px-5 pt-16 pb-5 backdrop-blur-[14px] transition-transform duration-200 ease-out",
+          "absolute top-0 right-0 z-44 flex h-full w-[min(340px,84vw)] flex-col gap-4 overflow-y-auto border-l border-[#00000010] bg-[#fff7e8] px-5 pt-16 pb-5 shadow-[-12px_0_40px_rgba(80,55,0,0.18)] transition-transform duration-200 ease-out",
           sidebarOpen ? "translate-x-0" : "translate-x-full"
         )}
       >
-        <h2 className="m-0 text-lg font-bold">Athlete Controls</h2>
-        <p className={largeStatus}>{status}</p>
+        <h2 className="m-0 text-lg font-black text-[#2b303b]">Athlete Controls</h2>
+        <p className="m-0 text-xl font-extrabold text-[#e08a17]">{status}</p>
 
         {poseOptions && poseOptions.length > 0 && (
           <PoseMenu
@@ -447,16 +585,16 @@ export function AthleteStage({
 
         <div className="flex flex-col gap-2">
           {running ? (
-            <button className={secondaryAction} type="button" onClick={stop}>
+            <button className={pillSecondary} type="button" onClick={stop}>
               Stop
             </button>
           ) : (
-            <button className={primaryAction} type="button" onClick={start}>
+            <button className={pillPrimary} type="button" onClick={() => void start()}>
               Start Pose Detection
             </button>
           )}
           <button
-            className={secondaryAction}
+            className={pillSecondary}
             type="button"
             aria-pressed={showDummy}
             onClick={() => setShowDummy((on) => !on)}
@@ -464,13 +602,13 @@ export function AthleteStage({
             Dummy Overlay: {showDummy ? "On" : "Off"}
           </button>
           <button
-            className={secondaryAction}
+            className={pillSecondary}
             type="button"
             onClick={() => toggleFullscreen(canvasRef.current?.parentElement ?? null)}
           >
             Toggle Fullscreen
           </button>
-          <Link className={secondaryAction} to="/">
+          <Link className={pillSecondary} to="/">
             Back Home
           </Link>
         </div>
@@ -496,7 +634,7 @@ function PoseMenu({ poseOptions, savedPoseIds, selectedPoseId, onSelectPose }: P
     <button
       key={pose.id}
       type="button"
-      className={pose.id === selectedPoseId ? primaryAction : secondaryAction}
+      className={pose.id === selectedPoseId ? pillPrimary : pillSecondary}
       onClick={() => onSelectPose?.(pose)}
     >
       {pose.name}
@@ -506,15 +644,15 @@ function PoseMenu({ poseOptions, savedPoseIds, selectedPoseId, onSelectPose }: P
   return (
     <>
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-bold uppercase text-[#aebbb8]">Starter holes</span>
+        <span className="text-sm font-bold uppercase text-[#a89a82]">Starter holes</span>
         <div className="flex flex-col gap-2">{starters.map(renderButton)}</div>
       </div>
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-bold uppercase text-[#aebbb8]">Saboteur holes</span>
+        <span className="text-sm font-bold uppercase text-[#a89a82]">Saboteur holes</span>
         {saboteurPoses.length > 0 ? (
           <div className="flex flex-col gap-2">{saboteurPoses.map(renderButton)}</div>
         ) : (
-          <p className="m-0 text-sm leading-5 text-[#aebbb8]">
+          <p className="m-0 text-sm leading-5 text-[#8a7d66]">
             None yet. Build and save a pose on the Saboteur page, then return here.
           </p>
         )}
