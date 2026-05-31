@@ -24,8 +24,9 @@ export type FigurePrimitive =
 export const BLOB_COLOR = "#2f86ff";
 /** Near-black used for the face features. */
 export const FACE_COLOR = "#0a0a0a";
-/** How far the hole silhouette is inflated beyond the body (universal-box pixels). */
-export const HOLE_PADDING = 20;
+/** How far the hole silhouette is inflated beyond the body (universal-box pixels). The
+ * hole matches the dummy exactly at 0; raise it to make the cutout more forgiving. */
+export const HOLE_PADDING = 8;
 
 export type BuildBlobFigureOptions = {
   /** Inflate every body part by this many universal-box pixels (for the hole cutout). */
