@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import type p5 from "p5";
 import {
   GameRole,
   HOLE_PADDING,
@@ -16,13 +17,15 @@ import {
   type UniversalJoint,
   type UniversalPose
 } from "@quackhacks/shared";
+import { drawDummyScene3D, type ScreenPoint } from "../lib/dummy3d";
 import { SaboteurSplash } from "../components/SaboteurSplash";
 import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
 import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
 import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
-import { cx, canvasPanel, saboteurJointHandleClass, saboteurStageBoundsRect, saboteurStageFloorLine, saboteurTorsoHandleIcon, saboteurViewport } from "../lib/ui";
+import { useChrome } from "../lib/chrome";
+import { cx, pillDanger, saboteurCard, saboteurJointHandleClass, saboteurPageBg, saboteurPillSecondary, saboteurStage, saboteurStageBoundsRect, saboteurStageFloorLine, saboteurTorsoHandleIcon, saboteurViewport } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
 
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
@@ -31,40 +34,60 @@ const JOINT_HANDLE_RADIUS = 10;
 const GROUND_Y = 0.94;
 const MIN_DRAG_RADIUS = 0.025;
 const MAX_LEG_SPREAD_DEGREES = 120;
-// Wide play-area bounds (normalized). X is generous so the figure can roam
-// across the landscape stage; the top is pulled above the head so the bounding
-// box fully encloses the figure (head included).
+// Wide play-area bounds (normalized) for the JOINTS. X is generous so the figure can
+// roam across the landscape stage. The ankles (the lowest joints) clamp to GROUND_Y;
+// the blob's feet are drawn a little below the ankle, so the foot SOLE — not the joint —
+// is what rests on the floor line and it can never poke through it.
 const POSE_MIN_X = -0.7;
 const POSE_MAX_X = 1.7;
 const POSE_MIN_Y = -0.08;
 const POSE_MAX_Y = GROUND_Y;
 
+const W = universalHumanSize.width;
+const H = universalHumanSize.height;
+
+// How far the blob figure overflows its joints (universal-box pixels): the head ellipse
+// rises above the head joint, the feet drop below the ankles, and wrist/limb caps stick
+// out sideways. We reserve room for these when fitting the figure into the stage so the
+// head never clips at the top and the feet land exactly on the floor line.
+const FIGURE_HEAD_RISE = 66;
+const FIGURE_FOOT_DROP = 16;
+const FIGURE_SIDE_MARGIN = 18;
+
 // Landscape stage in SVG user units. The element keeps this aspect ratio so it
 // fills the wide stage column without letterboxing.
 const STAGE_WIDTH = 800;
 const STAGE_HEIGHT = 480;
-const STAGE_INSET = 28;
+const STAGE_INSET = 16;
 
-// Fit the bounding box into the stage with a uniform scale, then center it.
-const boundsWidthPx = (POSE_MAX_X - POSE_MIN_X) * universalHumanSize.width;
-const boundsHeightPx = (POSE_MAX_Y - POSE_MIN_Y) * universalHumanSize.height;
+// The floor line sits at the bottom of the feet (ankle ground level + foot drop) so a
+// grounded foot rests on it; because ankles clamp at GROUND_Y, the sole can't cross it.
+const FLOOR_PX = GROUND_Y * H + FIGURE_FOOT_DROP;
+
+// Fit the FULL visual extent of the figure (joints + the overflow around them) into the
+// stage with a uniform scale, then center it — so the head and feet always stay in frame.
+const contentMinX = POSE_MIN_X * W - FIGURE_SIDE_MARGIN;
+const contentMaxX = POSE_MAX_X * W + FIGURE_SIDE_MARGIN;
+const contentMinY = POSE_MIN_Y * H - FIGURE_HEAD_RISE;
+const contentMaxY = FLOOR_PX;
+const contentWidthPx = contentMaxX - contentMinX;
+const contentHeightPx = contentMaxY - contentMinY;
 const dummyScale = Math.min(
-  (STAGE_WIDTH - STAGE_INSET * 2) / boundsWidthPx,
-  (STAGE_HEIGHT - STAGE_INSET * 2) / boundsHeightPx
+  (STAGE_WIDTH - STAGE_INSET * 2) / contentWidthPx,
+  (STAGE_HEIGHT - STAGE_INSET * 2) / contentHeightPx
 );
-const boxScreenWidth = boundsWidthPx * dummyScale;
-const boxScreenHeight = boundsHeightPx * dummyScale;
-const dummyTranslateX = (STAGE_WIDTH - boxScreenWidth) / 2 - POSE_MIN_X * universalHumanSize.width * dummyScale;
-const dummyTranslateY = (STAGE_HEIGHT - boxScreenHeight) / 2 - POSE_MIN_Y * universalHumanSize.height * dummyScale;
+const dummyTranslateX = (STAGE_WIDTH - contentWidthPx * dummyScale) / 2 - contentMinX * dummyScale;
+const dummyTranslateY = (STAGE_HEIGHT - contentHeightPx * dummyScale) / 2 - contentMinY * dummyScale;
 const dummyTransform = `translate(${dummyTranslateX} ${dummyTranslateY}) scale(${dummyScale})`;
 
 const stageBounds = {
-  x: POSE_MIN_X * universalHumanSize.width,
-  y: POSE_MIN_Y * universalHumanSize.height,
-  width: (POSE_MAX_X - POSE_MIN_X) * universalHumanSize.width,
-  height: (POSE_MAX_Y - POSE_MIN_Y) * universalHumanSize.height
+  x: POSE_MIN_X * W,
+  y: POSE_MIN_Y * H,
+  width: (POSE_MAX_X - POSE_MIN_X) * W,
+  // Extend the dashed box down to the floor line so the feet rest on its bottom edge.
+  height: FLOOR_PX - POSE_MIN_Y * H
 };
-const stageFloorY = GROUND_Y * universalHumanSize.height;
+const stageFloorY = FLOOR_PX;
 const jointParents = {
   head: "neck",
   neck: "hips",
@@ -124,12 +147,63 @@ const jointRotationLimits: Partial<Record<JointName, JointRotationLimit>> = {
   rightAnkle: { centerDegrees: 90, radiusDegrees: 95 }
 };
 
+function HamburgerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+/**
+ * A transient error toast pinned to the top-left of the stage. It fades in on mount,
+ * holds, then fades out and clears itself a few seconds later — so a failed save no
+ * longer reflows the toolbar buttons. Re-mount it with a changing `key` to replay.
+ */
+function SaveErrorToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  const [visible, setVisible] = useState(false);
+  // Keep the latest onDismiss without re-running the lifecycle effect, so the parent
+  // re-rendering (e.g. during a wiggle) never resets the fade timers.
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  useEffect(() => {
+    const fadeInId = window.requestAnimationFrame(() => setVisible(true));
+    const fadeOutId = window.setTimeout(() => setVisible(false), 2600);
+    const dismissId = window.setTimeout(() => onDismissRef.current(), 3000);
+    return () => {
+      window.cancelAnimationFrame(fadeInId);
+      window.clearTimeout(fadeOutId);
+      window.clearTimeout(dismissId);
+    };
+  }, []);
+
+  return (
+    <div
+      role="alert"
+      className={cx(
+        "pointer-events-none absolute left-5 top-5 z-20 max-w-[min(80%,320px)] rounded-[10px] bg-[#ef5c6b] px-3 py-2 text-sm font-bold text-white shadow-[0_8px_22px_rgba(150,25,40,0.5)] transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0"
+      )}
+    >
+      {message}
+    </div>
+  );
+}
+
 export function SaboteurPage() {
+  const { setNavHidden } = useChrome();
+  // Dev mode reveals the developer-only chrome: the global navbar, the "Your Progress"
+  // tracker, and the reward simulator buttons. Off by default for a clean player view.
+  const [devMode, setDevMode] = useState(false);
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
   const [socketStatus, setSocketStatus] = useState("WebSocket connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Bumped on each failed save so the error toast re-mounts and replays its fade even
+  // when the message text is identical to the previous attempt.
+  const [saveErrorNonce, setSaveErrorNonce] = useState(0);
   const [showHole, setShowHole] = useState(false);
   const gameControls = useActiveGame();
   const { connectionStatus, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
@@ -151,6 +225,12 @@ export function SaboteurPage() {
       window.localStorage.setItem(SPLASH_SEEN_STORAGE_KEY, "true");
     }
   }
+
+  // The navbar is hidden on this page unless dev mode is on; restore it on unmount.
+  useEffect(() => {
+    setNavHidden(!devMode);
+    return () => setNavHidden(false);
+  }, [devMode, setNavHidden]);
 
   useEffect(() => {
     persistSavedPoses(savedPoses);
@@ -299,6 +379,7 @@ export function SaboteurPage() {
 
     if (!hasGroundedFoot(normalizedDraftPose)) {
       setSaveError("One foot must be touching the ground");
+      setSaveErrorNonce((nonce) => nonce + 1);
       return;
     }
 
@@ -332,46 +413,70 @@ export function SaboteurPage() {
 
   return (
     <RoleGameShell role={GameRole.Saboteur} controls={gameControls}>
-    <section className="relative mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
+      <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
+      <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
       {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)] lg:items-stretch">
         <div className="flex min-h-0 flex-col gap-3">
-          <div className={cx(canvasPanel, "relative flex min-h-[min(68vh,640px)] flex-col overflow-hidden border-white/8 bg-[#08080a]")}>
-            <div className="flex flex-1 items-center justify-center px-2 py-2">
-              {showHole ? (
-                <SaboteurHolePreview pose={displayPose} />
-              ) : draftPose ? (
-                <SaboteurPoseEditor pose={draftPose} onChange={setDraftPose} />
-              ) : (
-                <SaboteurPosePreview pose={displayPose} />
-              )}
+          {/* Canvas card: stage + tool buttons along the bottom of the dark viewport. */}
+          <div className={cx(saboteurCard, "relative flex min-h-[min(70vh,680px)] flex-1 flex-col overflow-hidden p-3")}>
+            {saveError ? (
+              <SaveErrorToast key={saveErrorNonce} message={saveError} onDismiss={() => setSaveError(null)} />
+            ) : null}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-[#0c0d12] shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)]">
+              <div className="flex min-h-0 flex-1 items-center justify-center px-2 py-2">
+                {showHole ? (
+                  <SaboteurHolePreview pose={displayPose} />
+                ) : draftPose ? (
+                  <SaboteurPoseEditor pose={draftPose} onChange={setDraftPose} />
+                ) : (
+                  <SaboteurPosePreview pose={displayPose} />
+                )}
+              </div>
+
+              <SaboteurToolbar
+                draftActive={Boolean(draftPose)}
+                showHole={showHole}
+                onMakePose={makePose}
+                onEditPose={editSelectedPose}
+                onCancelDraft={cancelDraft}
+                onToggleHole={() => setShowHole((current) => !current)}
+                onSavePose={addPose}
+                onSendPose={sendPose}
+              />
             </div>
           </div>
 
-          <SaboteurToolbar
-            draftActive={Boolean(draftPose)}
-            showHole={showHole}
-            saveError={saveError}
-            onMakePose={makePose}
-            onEditPose={editSelectedPose}
-            onCancelDraft={cancelDraft}
-            onToggleHole={() => setShowHole((current) => !current)}
-            onSavePose={addPose}
-            onSendPose={sendPose}
-          />
-
-          <footer className="px-1 pb-1">
-            <div className="flex flex-wrap items-center gap-3 text-xs text-[#8a8274]">
-              <span className="inline-flex items-center gap-1.5">
-                <span className={cx("inline-block h-2 w-2 rounded-full", socketReady ? "bg-[#ef5c6b]" : "bg-[#8a8274]")} />
-                {socketReady ? "Connected & ready" : "Connecting…"}
-              </span>
-              <span className="hidden sm:inline">{socketStatus}</span>
-            </div>
-          </footer>
+          {devMode ? (
+            <footer className={cx(saboteurCard, "px-4 py-2.5")}>
+              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-[#8b919c]">
+                <span className="inline-flex items-center gap-1.5 text-[#ece8e0]">
+                  <span className={cx("inline-block h-2.5 w-2.5 rounded-full", socketReady ? "bg-[#2fb86b]" : "bg-[#5c6068]")} />
+                  {socketReady ? "Connected & ready" : "Connecting…"}
+                </span>
+                <span className="hidden sm:inline">{socketStatus}</span>
+              </div>
+            </footer>
+          ) : null}
         </div>
 
-        <aside className="flex flex-col gap-3">
+        <aside className="flex min-h-0 flex-1 flex-col gap-3">
+          <button
+            type="button"
+            className={cx(
+              devMode ? pillDanger : saboteurPillSecondary,
+              "w-full px-4 py-2.5 text-[13px]"
+            )}
+            aria-pressed={devMode}
+            onClick={() => setDevMode((on) => !on)}
+          >
+            <span className="inline-flex w-full items-center justify-center gap-2">
+              <HamburgerIcon />
+              Controls
+            </span>
+          </button>
+
           <SaboteurDeckPanel
             poses={poseList}
             selectedIndex={poseIndex}
@@ -382,6 +487,7 @@ export function SaboteurPage() {
             inventory={powerupProgress.inventory}
             perfectStreak={powerupProgress.perfectStreak}
             movesSinceGrant={powerupProgress.movesSinceGrant}
+            showDevSections={devMode}
             onActivate={activatePowerup}
             onSimulatePerfect={simulatePerfectRound}
             onSimulateMove={simulateMove}
@@ -479,38 +585,125 @@ function StageBounds() {
   );
 }
 
-function BlobFigure({ jointMap, faceMode = "happy" }: { jointMap: Map<JointName, UniversalJoint>; faceMode?: FaceMode }) {
-  const prims = useMemo(
-    () => buildBlobFigure(Array.from(jointMap.values()), { withFace: true, faceMode }),
-    [jointMap, faceMode]
-  );
+/**
+ * The 3D blob dummy (p5.js WEBGL), rendered with the exact same shared renderer the
+ * athlete/posing page uses so the two screens look identical. The universal box is mapped
+ * into the canvas using the same `dummyTransform` (scale + translate) the SVG layer uses
+ * — with `preserveAspectRatio="xMidYMid meet"` centering — so the 3D dummy lines up pixel
+ * for pixel with the SVG joint handles / bounds overlaid on top of it.
+ */
+function Dummy3DStage({
+  pose,
+  faceMode = "happy",
+  className
+}: {
+  pose: UniversalPose;
+  faceMode?: FaceMode;
+  className?: string;
+}) {
+  const mountRef = useRef<HTMLDivElement>(null);
+  // The detect/animation loop reads the latest pose + face through refs so we never have
+  // to tear down and rebuild the p5 sketch on every pose change (e.g. during a wiggle).
+  const poseRef = useRef(pose);
+  poseRef.current = pose;
+  const faceModeRef = useRef<FaceMode>(faceMode);
+  faceModeRef.current = faceMode;
+
+  useEffect(() => {
+    let sketch: p5 | undefined;
+    let cancelled = false;
+
+    void import("p5").then((module) => {
+      if (cancelled || !mountRef.current) {
+        return;
+      }
+      const P5 = module.default;
+      sketch = new P5((p: p5) => {
+        p.setup = () => {
+          const el = mountRef.current;
+          p.createCanvas(el?.clientWidth || STAGE_WIDTH, el?.clientHeight || STAGE_HEIGHT, p.WEBGL);
+          p.noStroke();
+        };
+        p.draw = () => {
+          // Keep the canvas matched to its container so the dummy stays aligned with the
+          // SVG overlay as the layout resizes.
+          const el = mountRef.current;
+          if (el) {
+            const w = el.clientWidth;
+            const h = el.clientHeight;
+            if (w && h && (Math.abs(w - p.width) > 1 || Math.abs(h - p.height) > 1)) {
+              p.resizeCanvas(w, h);
+            }
+          }
+          p.clear();
+
+          const currentPose = poseRef.current;
+          // Replicate SVG `preserveAspectRatio="xMidYMid meet"`: uniform scale to fit the
+          // viewBox inside the canvas, then center the leftover space.
+          const factor = Math.min(p.width / STAGE_WIDTH, p.height / STAGE_HEIGHT);
+          const offsetX = (p.width - STAGE_WIDTH * factor) / 2;
+          const offsetY = (p.height - STAGE_HEIGHT * factor) / 2;
+          const s = dummyScale * factor;
+
+          const map = new Map(currentPose.joints.map((joint) => [joint.name, joint] as const));
+          const at = (name: JointName): ScreenPoint | null => {
+            const joint = map.get(name);
+            return joint
+              ? {
+                  x: offsetX + (dummyTranslateX + joint.x * universalHumanSize.width * dummyScale) * factor,
+                  y: offsetY + (dummyTranslateY + joint.y * universalHumanSize.height * dummyScale) * factor
+                }
+              : null;
+          };
+
+          drawDummyScene3D(p, {
+            at,
+            s,
+            width: p.width,
+            height: p.height,
+            faceMode: faceModeRef.current
+          });
+        };
+      }, mountRef.current);
+    });
+
+    return () => {
+      cancelled = true;
+      sketch?.remove();
+    };
+  }, []);
 
   return (
-    <g>
-      <FigurePrimitives prims={prims} />
-    </g>
+    <div
+      ref={mountRef}
+      aria-hidden="true"
+      className={cx(className, "[&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full")}
+    />
   );
 }
 
 function SaboteurPosePreview({ pose }: { pose: UniversalPose }) {
-  const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
-
   return (
-    <svg
-      className={saboteurViewport}
-      viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
-      role="img"
-      aria-label={pose.name}
-    >
-      <g transform={dummyTransform}>
-        <StageBounds />
-        <BlobFigure jointMap={jointMap} />
-      </g>
-    </svg>
+    <div className={cx("relative", saboteurStage)}>
+      <Dummy3DStage pose={pose} className="absolute inset-0 h-full w-full" />
+      <svg
+        className="absolute inset-0 block h-full w-full bg-transparent"
+        viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
+        role="img"
+        aria-label={pose.name}
+      >
+        <g transform={dummyTransform}>
+          <StageBounds />
+        </g>
+      </svg>
+    </div>
   );
 }
 
-const WALL_FILL = "#4a5b86";
+// The saboteur's red wall the pose carves a hole through (red counterpart of the
+// athlete's yellow wall).
+const WALL_TOP = "#ff6b78";
+const WALL_BOTTOM = "#d8313f";
 
 // The figure's solid outline, used as the cutout for the hole. `pad` inflates
 // every limb so the hole leaves generous room around the pose. Shares geometry with
@@ -556,11 +749,12 @@ function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
             <FigureSilhouette jointMap={jointMap} color="black" pad={HOLE_PADDING} />
           </g>
         </mask>
+        <linearGradient id={`${maskId}-wall`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={WALL_TOP} />
+          <stop offset="1" stopColor={WALL_BOTTOM} />
+        </linearGradient>
       </defs>
-      <rect x={0} y={0} width={STAGE_WIDTH} height={STAGE_HEIGHT} fill={WALL_FILL} mask={`url(#${maskId})`} />
-      <g transform={dummyTransform}>
-        <StageBounds />
-      </g>
+      <rect x={0} y={0} width={STAGE_WIDTH} height={STAGE_HEIGHT} fill={`url(#${maskId}-wall)`} mask={`url(#${maskId})`} />
     </svg>
   );
 }
@@ -646,20 +840,28 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
   }
 
   return (
-    <svg
-      ref={svgRef}
-      className={cx(saboteurViewport, activeJoint ? "cursor-grabbing" : "cursor-default", "touch-none")}
-      viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
-      role="img"
-      aria-label="Editable saboteur pose"
-      onPointerMove={moveActiveJoint}
-      onPointerUp={stopPointerAction}
-      onPointerCancel={stopPointerAction}
-    >
-      <g transform={dummyTransform}>
-        <StageBounds />
-        <BlobFigure jointMap={jointMap} faceMode={isWriggling ? "squeeze" : "happy"} />
-        <TorsoMoveHandle
+    <div className={cx("relative", saboteurStage)}>
+      {/* The 3D blob dummy (same renderer as the posing page) sits behind a transparent
+          SVG layer that still owns all the drag interactions: joint handles, the torso
+          move handle, the bounds, and the wiggle all live in the SVG on top. */}
+      <Dummy3DStage
+        pose={pose}
+        faceMode={isWriggling ? "squeeze" : "happy"}
+        className="absolute inset-0 h-full w-full"
+      />
+      <svg
+        ref={svgRef}
+        className={cx("absolute inset-0 block h-full w-full bg-transparent", activeJoint ? "cursor-grabbing" : "cursor-default", "touch-none")}
+        viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
+        role="img"
+        aria-label="Editable saboteur pose"
+        onPointerMove={moveActiveJoint}
+        onPointerUp={stopPointerAction}
+        onPointerCancel={stopPointerAction}
+      >
+        <g transform={dummyTransform}>
+          <StageBounds />
+          <TorsoMoveHandle
           cx={torsoCenter.x * universalHumanSize.width}
           cy={torsoCenter.y * universalHumanSize.height}
           isWriggling={isWriggling}
@@ -704,8 +906,9 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
             </>
           );
         })()}
-      </g>
-    </svg>
+        </g>
+      </svg>
+    </div>
   );
 }
 

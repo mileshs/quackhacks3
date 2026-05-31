@@ -130,8 +130,8 @@ export function HomePage() {
           Poses for Dummies
         </h1>
         <img
-          className="block w-[clamp(300px,27vw,455px)] max-w-full shrink drop-shadow-[0_16px_13px_rgba(143,101,11,0.24)]"
-          src="/poses-for-dummies-logo.png"
+          className="block w-[clamp(390px,28.7vw,485px)] max-w-full drop-shadow-[0_16px_13px_rgba(143,101,11,0.24)]"
+          src="/poses-for-dummies-logo-ai.png"
           alt="Poses for Dummies"
         />
         <nav className="flex w-[clamp(430px,30vw,500px)] max-w-full flex-col gap-[clamp(0.7rem,1.8svh,1.35rem)]" aria-label="Home">
