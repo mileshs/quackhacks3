@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { GameRole, starterPoses, type UniversalPose } from "@quackhacks/shared";
 import { AthleteStage } from "../components/AthleteStage";
 import { DummySplash } from "../components/DummySplash";
@@ -41,27 +41,31 @@ export function PoseTestPage() {
     }
     return base;
   }, [savedPoses, previewPose]);
+  const savedPoseIds = useMemo(() => savedPoses.map((pose) => pose.id), [savedPoses]);
   const targetPose = previewPose ?? poseOptions.find((pose) => pose.id === selectedId) ?? poseOptions[0] ?? starterPoses[0];
+  const handleSelectPose = useCallback((pose: UniversalPose) => setSelectedId(pose.id), []);
 
-  function dismissSplash() {
+  const dismissSplash = useCallback(() => {
     setShowSplash(false);
-  }
+  }, []);
+
+  const showIntro = useCallback(() => setShowSplash(true), []);
 
   return (
     <>
       {showSplash ? <DummySplash onDismiss={dismissSplash} /> : null}
       <RoleGameShell role={GameRole.Dummy} controls={gameControls}>
         <div className="absolute top-18 right-4 z-10">
-          <button className={secondaryAction} type="button" onClick={() => setShowSplash(true)}>
+          <button className={secondaryAction} type="button" onClick={showIntro}>
             Replay Intro
           </button>
         </div>
         <AthleteStage
           targetPose={targetPose}
           poseOptions={poseOptions}
-          savedPoseIds={savedPoses.map((pose) => pose.id)}
+          savedPoseIds={savedPoseIds}
           selectedPoseId={targetPose.id}
-          onSelectPose={(pose) => setSelectedId(pose.id)}
+          onSelectPose={handleSelectPose}
           powerupActivation={lastPowerup}
           onFinishWall={sendRoundSnapshot}
           tempo={tempo}

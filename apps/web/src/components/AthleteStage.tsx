@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type p5 from "p5";
 import {
   DEFAULT_POWERUP_DURATION_MS,
@@ -40,6 +40,8 @@ const BAND_COLOR: Record<ScoreBand, string> = {
 const hudCard =
   "rounded-[18px] bg-[#fdf6e8] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.9),0_2px_3px_rgba(0,0,0,0.12),0_12px_24px_rgba(80,55,0,0.3)]";
 const hudLabel = "block text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#a89a82]";
+const SCORE_FLIGHT_MS = 1_050;
+const SCORE_FLIGHT_PRUNE_MS = 250;
 
 // Cream pill button (logo-dark text), and a yellow "primary" variant. Both get a raised,
 // 3D look via an inset top highlight, a tight contact shadow, and a soft cast shadow.
@@ -108,6 +110,15 @@ const HOLE_SCALE = 0.8;
 type Region = { x0: number; y0: number; w: number; h: number };
 
 type RectMetrics = { left: number; top: number; width: number; height: number };
+type ScoreFlight = {
+  id: number;
+  points: number;
+  from: ScreenPoint;
+  mid: ScreenPoint;
+  to: ScreenPoint;
+  rotate: number;
+  duration: number;
+};
 
 type PoseDebugInfo = {
   canvas: {
@@ -172,6 +183,91 @@ function rectMetrics(rect: DOMRect): RectMetrics {
     top: rect.top,
     width: rect.width,
     height: rect.height
+  };
+}
+
+function randomBetween(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+const SCORE_SPAWN_JOINTS: Array<UniversalPose["joints"][number]["name"]> = [
+  "neck",
+  "leftShoulder",
+  "rightShoulder",
+  "hips"
+];
+
+function averagePosePoint(
+  pose: UniversalPose,
+  names: Array<UniversalPose["joints"][number]["name"]>
+): ScreenPoint | null {
+  const points = names
+    .map((name) => pose.joints.find((joint) => joint.name === name))
+    .filter((joint): joint is UniversalPose["joints"][number] =>
+      Boolean(joint && Number.isFinite(joint.x) && Number.isFinite(joint.y))
+    );
+
+  if (points.length === 0) {
+    return null;
+  }
+
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+  };
+}
+
+function canvasPointToStagePoint(
+  canvas: HTMLCanvasElement,
+  stageRect: DOMRect,
+  point: ScreenPoint
+): ScreenPoint | null {
+  const canvasRect = canvas.getBoundingClientRect();
+  if (!(canvas.width > 0 && canvas.height > 0 && canvasRect.width > 0 && canvasRect.height > 0)) {
+    return null;
+  }
+
+  const coverScale = Math.max(canvasRect.width / canvas.width, canvasRect.height / canvas.height);
+  const coverOffsetX = (canvasRect.width - canvas.width * coverScale) / 2;
+  const coverOffsetY = (canvasRect.height - canvas.height * coverScale) / 2;
+
+  return {
+    x: canvasRect.left - stageRect.left + coverOffsetX + point.x * coverScale,
+    y: canvasRect.top - stageRect.top + coverOffsetY + point.y * coverScale
+  };
+}
+
+function scoreSpawnPoint(
+  stageRect: DOMRect,
+  canvas: HTMLCanvasElement | null,
+  pose: UniversalPose | null
+): ScreenPoint {
+  const fallback = {
+    x: stageRect.width * randomBetween(0.44, 0.58),
+    y: stageRect.height * randomBetween(0.38, 0.56)
+  };
+
+  const torso = pose ? averagePosePoint(pose, SCORE_SPAWN_JOINTS) : null;
+  if (!canvas || !torso) {
+    return fallback;
+  }
+
+  const region = holeRegion(canvas.width, canvas.height);
+  const canvasPoint = {
+    x: region.x0 + torso.x * region.w,
+    y: region.y0 + torso.y * region.h
+  };
+  const stagePoint = canvasPointToStagePoint(canvas, stageRect, canvasPoint) ?? fallback;
+  const jitterX = Math.min(92, Math.max(34, stageRect.width * 0.09));
+  const jitterY = Math.min(72, Math.max(28, stageRect.height * 0.07));
+
+  return {
+    x: clampNumber(stagePoint.x + randomBetween(-jitterX, jitterX), 24, Math.max(24, stageRect.width - 24)),
+    y: clampNumber(stagePoint.y + randomBetween(-jitterY, jitterY), 24, Math.max(24, stageRect.height - 24))
   };
 }
 
@@ -484,11 +580,15 @@ export function AthleteStage({
   onFinishWall,
   tempo
 }: AthleteStageProps) {
+  const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scoreTargetRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopLoopRef = useRef<(() => void) | null>(null);
   const lastMatchUpdate = useRef(0);
+  const scoreFlightIdRef = useRef(0);
+  const scoreFlightTimersRef = useRef<number[]>([]);
 
   // Tempo phase drives the dummy's behavior: rest = dim + wait, pose = track/score,
   // snapshot = freeze + flash. The detect loop reads it through a ref.
@@ -527,11 +627,11 @@ export function AthleteStage({
   const [error, setError] = useState(false);
   const [matchPercent, setMatchPercent] = useState(0);
   const [band, setBand] = useState<ScoreBand>("CRASH");
-  // Placeholder HUD values until the full game loop is wired in.
-  const [score] = useState(0);
+  const [score, setScore] = useState(0);
+  const [scoreFlights, setScoreFlights] = useState<ScoreFlight[]>([]);
   const [lives] = useState(3);
   const [showDummy, setShowDummy] = useState(true);
-  const [showDebugDashboard, setShowDebugDashboard] = useState(true);
+  const [showDebugDashboard, setShowDebugDashboard] = useState(false);
   const [guidance, setGuidance] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<PoseDebugInfo | null>(null);
   // Dev mode comes from the global Settings menu now. When on, the game never pauses for
@@ -544,9 +644,13 @@ export function AthleteStage({
   const [activePowerup, setActivePowerup] = useState<SaboteurPowerupKind | null>(null);
   const [spotlightPct, setSpotlightPct] = useState({ x: 50, y: 55 });
   const matchPercentRef = useRef(0);
+  const runningRef = useRef(false);
   const bandRef = useRef<ScoreBand>("CRASH");
+  const guidanceRef = useRef<string | null>(null);
   matchPercentRef.current = matchPercent;
+  runningRef.current = running;
   bandRef.current = band;
+  guidanceRef.current = guidance;
   const debugInfoRef = useRef<PoseDebugInfo | null>(null);
   debugInfoRef.current = debugInfo;
 
@@ -559,6 +663,57 @@ export function AthleteStage({
   showDebugDashboardRef.current = showDebugDashboard;
   const activePowerupRef = useRef(activePowerup);
   activePowerupRef.current = activePowerup;
+
+  const spawnScoreFlight = useCallback((points: number) => {
+    const stage = stageRef.current;
+    const target = scoreTargetRef.current;
+    if (!stage || !target) {
+      return;
+    }
+
+    const stageRect = stage.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const from = scoreSpawnPoint(stageRect, canvasRef.current, dummyRenderRef.current?.pose ?? null);
+    const to = {
+      x: targetRect.left - stageRect.left + targetRect.width * 0.5,
+      y: targetRect.top - stageRect.top + targetRect.height * 0.52
+    };
+    const mid = {
+      x: (from.x + to.x) / 2 + randomBetween(-150, 130),
+      y: Math.min(from.y, to.y) - randomBetween(90, 190)
+    };
+    const duration = SCORE_FLIGHT_MS + Math.round(randomBetween(-110, 130));
+    const flight: ScoreFlight = {
+      id: ++scoreFlightIdRef.current,
+      points,
+      from,
+      mid,
+      to,
+      rotate: randomBetween(-18, 18),
+      duration
+    };
+
+    setScoreFlights((current) => [...current.slice(-5), flight]);
+    const timerId = window.setTimeout(() => {
+      setScoreFlights((current) => current.filter((item) => item.id !== flight.id));
+      scoreFlightTimersRef.current = scoreFlightTimersRef.current.filter((item) => item !== timerId);
+    }, duration + SCORE_FLIGHT_PRUNE_MS);
+    scoreFlightTimersRef.current.push(timerId);
+  }, []);
+
+  const awardCurrentScore = useCallback(() => {
+    if (!runningRef.current || (guidanceRef.current && !devModeRef.current)) {
+      return;
+    }
+
+    const points = Math.max(0, Math.round(matchPercentRef.current));
+    if (points <= 0) {
+      return;
+    }
+
+    setScore((current) => current + points);
+    spawnScoreFlight(points);
+  }, [spawnScoreFlight]);
 
   const stop = useCallback(() => {
     const wasActive = Boolean(stopLoopRef.current || streamRef.current);
@@ -588,6 +743,8 @@ export function AthleteStage({
       if (powerupTimerRef.current) {
         window.clearTimeout(powerupTimerRef.current);
       }
+      scoreFlightTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      scoreFlightTimersRef.current = [];
     },
     []
   );
@@ -606,6 +763,7 @@ export function AthleteStage({
   }, [powerupActivation]);
 
   function finishWall() {
+    awardCurrentScore();
     onFinishWall?.({
       matchPercent: matchPercentRef.current,
       band: bandRef.current,
@@ -915,7 +1073,7 @@ export function AthleteStage({
   const debugDashboardVisible = devMode && showDebugDashboard;
 
   return (
-    <div className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
+    <div ref={stageRef} className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
       <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
       <div className={cx("relative h-full w-full", activePowerup === "mirror" && "scale-x-[-1]")}>
         <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
@@ -946,6 +1104,12 @@ export function AthleteStage({
         </div>
       ) : null}
 
+      <div className="pointer-events-none absolute inset-0 z-47 overflow-hidden" aria-hidden="true">
+        {scoreFlights.map((flight) => (
+          <ScoreFlightChip flight={flight} key={flight.id} />
+        ))}
+      </div>
+
       {/* Top-left stack: logo and score. */}
       <div className="absolute top-4 left-4 z-42 flex w-[214px] flex-col gap-3">
         <img
@@ -956,7 +1120,7 @@ export function AthleteStage({
         />
         <div className={cx(hudCard, "px-4 py-2.5")}>
           <span className={hudLabel}>Score</span>
-          <div className="mt-0.5 flex items-center gap-2">
+          <div ref={scoreTargetRef} className="mt-0.5 flex items-center gap-2">
             <StarIcon />
             <span className="text-[28px] font-black leading-none text-[#2b303b]">{score}</span>
           </div>
@@ -1048,6 +1212,25 @@ export function AthleteStage({
         </div>
       )}
 
+    </div>
+  );
+}
+
+function ScoreFlightChip({ flight }: { flight: ScoreFlight }) {
+  const style = {
+    left: `${flight.from.x}px`,
+    top: `${flight.from.y}px`,
+    "--score-mid-x": `${flight.mid.x - flight.from.x}px`,
+    "--score-mid-y": `${flight.mid.y - flight.from.y}px`,
+    "--score-end-x": `${flight.to.x - flight.from.x}px`,
+    "--score-end-y": `${flight.to.y - flight.from.y}px`,
+    "--score-rotate": `${flight.rotate}deg`,
+    animationDuration: `${flight.duration}ms`
+  } as CSSProperties;
+
+  return (
+    <div className="score-flight-chip" style={style}>
+      <span>+{flight.points}</span>
     </div>
   );
 }
