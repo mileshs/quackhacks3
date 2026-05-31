@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import type p5 from "p5";
 import {
   BLOB_COLOR,
   HOLE_PADDING,
@@ -250,6 +251,11 @@ export function AthleteStage({
   const stopLoopRef = useRef<(() => void) | null>(null);
   const lastMatchUpdate = useRef(0);
 
+  // The dummy is rendered on a separate p5.js WEBGL canvas overlaid on the 2D one. The
+  // detect loop publishes the latest pose here and the p5 draw loop reads it.
+  const dummyMountRef = useRef<HTMLDivElement>(null);
+  const dummyRenderRef = useRef<DummyRender | null>(null);
+
   // Keep the latest target in a ref so the running detect loop always sees fresh data
   // without us tearing down and rebuilding the loop on every prop change.
   const targetRef = useRef(targetPose);
@@ -284,6 +290,7 @@ export function AthleteStage({
     stopLoopRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    dummyRenderRef.current = null;
     if (wasActive) {
       setRunning(false);
       setStatus("Stopped");
@@ -292,6 +299,45 @@ export function AthleteStage({
   }, []);
 
   useEffect(() => stop, [stop]);
+
+  // Spin up the p5.js WEBGL canvas that renders the 3D dummy on top of the 2D hole. The
+  // canvas mirrors the 2D canvas's resolution + CSS so the dummy lines up with the hole.
+  useEffect(() => {
+    let sketch: p5 | undefined;
+    let cancelled = false;
+
+    void import("p5").then((module) => {
+      if (cancelled || !dummyMountRef.current) {
+        return;
+      }
+      const P5 = module.default;
+      sketch = new P5((p: p5) => {
+        p.setup = () => {
+          const source = canvasRef.current;
+          p.createCanvas(source?.width || 1280, source?.height || 720, p.WEBGL);
+          p.noStroke();
+        };
+        p.draw = () => {
+          // Keep the 3D canvas matched to the 2D canvas's resolution so they stay aligned.
+          const source = canvasRef.current;
+          if (source && (source.width !== p.width || source.height !== p.height)) {
+            p.resizeCanvas(source.width, source.height);
+          }
+          p.clear();
+          const data = dummyRenderRef.current;
+          if (!data || !showDummyRef.current) {
+            return;
+          }
+          drawDummy3D(p, data.pose, data.handClosed, p.width, p.height, data.hipFrameX);
+        };
+      }, dummyMountRef.current);
+    });
+
+    return () => {
+      cancelled = true;
+      sketch?.remove();
+    };
+  }, []);
 
   // Auto-start pose detection on mount instead of waiting for a button. Guarded with a
   // ref so React StrictMode's double-invoke (and re-renders) don't kick off twice.
@@ -402,8 +448,10 @@ export function AthleteStage({
           const rHip = landmarks?.[24];
           const hipFrameX = lHip && rHip ? (lHip.x + rHip.x) / 2 : null;
 
+          // Publish the pose for the p5 WEBGL dummy, and paint the 2D backdrop + hole.
+          dummyRenderRef.current = dummyPose ? { pose: dummyPose, handClosed, hipFrameX } : null;
           if (ctx) {
-            drawFrame(ctx, dummyPose, handClosed, targetRef.current, showDummyRef.current, hipFrameX);
+            drawFrame(ctx, targetRef.current);
           }
 
           const now = performance.now();
@@ -434,6 +482,13 @@ export function AthleteStage({
     <div className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
       <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
       <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
+
+      {/* 3D dummy renders here (p5.js WEBGL), overlaid on the 2D hole and matched to its
+          resolution + object-cover so the dummy lines up with the carved hole. */}
+      <div
+        ref={dummyMountRef}
+        className="pointer-events-none absolute inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
+      />
 
       {/* TEMP dev toggle: sits above everything. In dev mode the game never pauses for
           framing and the dummy tracks your raw pose instead of clipping to the hole. */}
@@ -654,15 +709,14 @@ function toggleFullscreen(el: Element | null) {
 
 type HandClosed = { left: boolean; right: boolean };
 
-/** Draw one live frame: black backdrop, the hole, then the dummy on top. */
-function drawFrame(
-  ctx: CanvasRenderingContext2D,
-  livePose: UniversalPose | null,
-  handClosed: HandClosed,
-  target: UniversalPose,
-  showDummy: boolean,
-  hipFrameX: number | null
-) {
+/** Latest data published by the detect loop for the p5 WEBGL dummy to render. */
+type DummyRender = { pose: UniversalPose; handClosed: HandClosed; hipFrameX: number | null };
+
+/**
+ * Draw one live frame on the 2D canvas: black backdrop + the carved hole. The blue dummy
+ * is rendered separately in 3D on the overlaid p5.js WEBGL canvas.
+ */
+function drawFrame(ctx: CanvasRenderingContext2D, target: UniversalPose) {
   const { width, height } = ctx.canvas;
 
   ctx.clearRect(0, 0, width, height);
@@ -673,10 +727,6 @@ function drawFrame(
   // Hole is carved from the same blob silhouette the saboteur draws. The live pose is
   // already mirrored to match the selfie view, so no extra canvas mirror is needed.
   drawHoleOverlay(ctx, target, width, height);
-
-  if (showDummy && livePose) {
-    drawDummy(ctx, livePose, handClosed, width, height, hipFrameX);
-  }
 }
 
 /** Map the universal box (0..320, 0..480) into the centered portrait hole region. */
@@ -693,14 +743,47 @@ function withRegionTransform(
   ctx.restore();
 }
 
+type ScreenPoint = { x: number; y: number };
+
+/** A 3D sphere centered at a screen point (z = 0 plane). */
+function sphere3D(p: p5, point: ScreenPoint | null, r: number) {
+  if (!point || r <= 0) {
+    return;
+  }
+  p.push();
+  p.translate(point.x, point.y, 0);
+  p.sphere(r);
+  p.pop();
+}
+
+/** A 3D capsule: a cylinder between two screen points, capped with spheres for a pill look. */
+function capsule3D(p: p5, a: ScreenPoint | null, b: ScreenPoint | null, r: number) {
+  if (!a || !b || r <= 0) {
+    return;
+  }
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len > 0.5) {
+    p.push();
+    p.translate((a.x + b.x) / 2, (a.y + b.y) / 2, 0);
+    // p5 cylinders run along +y; rotate that axis onto the bone direction.
+    p.rotateZ(Math.atan2(-dx, dy));
+    p.cylinder(r, len);
+    p.pop();
+  }
+  sphere3D(p, a, r);
+  sphere3D(p, b, r);
+}
+
 /**
- * Draw the athlete's dummy using the SAME blob figure as the saboteur (capsule body +
- * round head + face). The live pose has already been normalized onto the universal
- * dummy, so a tall and a short player produce the same-sized figure that lines up with
- * the hole. Closed/grabbing hands are recolored red on top.
+ * Render the athlete's dummy in 3D (p5.js WEBGL): shaded, pill-shaped limbs built from
+ * cylinders + spheres with directional lighting. The joint layout/radii mirror the 2D
+ * blob figure so the dummy still nests into the carved hole, and it uses the same
+ * universal-box → hole-region mapping (plus the horizontal follow offset) as before.
  */
-function drawDummy(
-  ctx: CanvasRenderingContext2D,
+function drawDummy3D(
+  p: p5,
   pose: UniversalPose,
   handClosed: HandClosed,
   width: number,
@@ -708,38 +791,101 @@ function drawDummy(
   hipFrameX: number | null
 ) {
   const region = holeRegion(width, height);
-  const prims = buildBlobFigure(pose.joints, { withFace: true, faceMode: "happy", color: BLOB_COLOR });
+  // Uniform universal-box-pixel → screen-pixel scale (region preserves the box aspect).
+  const s = region.w / UNIVERSAL_W;
 
   // Slide the (hip-anchored) puppet horizontally to the player's real, mirrored frame
-  // position so moving left/right in front of the camera moves the dummy. The puppet's
-  // hips sit at the hole's hip x; offset by the difference to the live frame spot.
+  // position — same math the 2D dummy used.
   let followX = 0;
   if (hipFrameX !== null) {
     const hipsJoint = pose.joints.find((joint) => joint.name === "hips");
     const dummyHipsX = hipsJoint ? hipsJoint.x : 0.5;
-    const mirroredFrameX = 1 - hipFrameX;
-    followX = mirroredFrameX * width - (region.x0 + dummyHipsX * region.w);
+    followX = (1 - hipFrameX) * width - (region.x0 + dummyHipsX * region.w);
   }
 
-  // Recolor a grabbing hand: a red circle painted over the blue wrist blob.
-  const jointAt = (name: UniversalPose["joints"][number]["name"]) => {
-    const joint = pose.joints.find((candidate) => candidate.name === name);
-    return joint ? { x: joint.x * UNIVERSAL_W, y: joint.y * UNIVERSAL_H } : null;
+  const map = new Map(pose.joints.map((joint) => [joint.name, joint] as const));
+  const at = (name: UniversalPose["joints"][number]["name"]): ScreenPoint | null => {
+    const joint = map.get(name);
+    return joint
+      ? { x: region.x0 + joint.x * region.w + followX, y: region.y0 + joint.y * region.h }
+      : null;
   };
-  const grabPrims: FigurePrimitive[] = [];
-  const leftWrist = jointAt("leftWrist");
-  const rightWrist = jointAt("rightWrist");
-  if (handClosed.left && leftWrist) {
-    grabPrims.push({ kind: "circle", c: leftWrist, r: 17, fill: HAND_GRAB_COLOR });
-  }
-  if (handClosed.right && rightWrist) {
-    grabPrims.push({ kind: "circle", c: rightWrist, r: 17, fill: HAND_GRAB_COLOR });
+
+  const head = at("head");
+  const neck = at("neck");
+  const leftShoulder = at("leftShoulder");
+  const rightShoulder = at("rightShoulder");
+  const leftElbow = at("leftElbow");
+  const rightElbow = at("rightElbow");
+  const leftWrist = at("leftWrist");
+  const rightWrist = at("rightWrist");
+  const hips = at("hips");
+  const leftKnee = at("leftKnee");
+  const rightKnee = at("rightKnee");
+  const leftAnkle = at("leftAnkle");
+  const rightAnkle = at("rightAnkle");
+
+  p.push();
+  // WEBGL origin is the canvas center; shift so we can use top-left screen coordinates.
+  p.translate(-width / 2, -height / 2, 0);
+  p.noStroke();
+  p.ambientLight(80);
+  p.directionalLight(235, 240, 255, 0.45, 0.6, -0.75);
+  p.fill(BLOB_COLOR);
+
+  // Legs + feet.
+  capsule3D(p, hips, leftKnee, 19 * s);
+  capsule3D(p, leftKnee, leftAnkle, 17 * s);
+  capsule3D(p, hips, rightKnee, 19 * s);
+  capsule3D(p, rightKnee, rightAnkle, 17 * s);
+  foot3D(p, leftAnkle, 19 * s, 12 * s);
+  foot3D(p, rightAnkle, 19 * s, 12 * s);
+
+  // Arms + hands.
+  capsule3D(p, leftShoulder, leftElbow, 14 * s);
+  capsule3D(p, leftElbow, leftWrist, 13 * s);
+  capsule3D(p, rightShoulder, rightElbow, 14 * s);
+  capsule3D(p, rightElbow, rightWrist, 13 * s);
+  sphere3D(p, leftWrist, 15 * s);
+  sphere3D(p, rightWrist, 15 * s);
+
+  // Torso.
+  capsule3D(p, leftShoulder, rightShoulder, 22 * s);
+  capsule3D(p, neck, hips, 25 * s);
+  sphere3D(p, neck, 24 * s);
+  sphere3D(p, hips, 27 * s);
+
+  // Neck link + head.
+  capsule3D(p, head, neck, 14 * s);
+  const headCenter = head ?? neck;
+  if (headCenter) {
+    p.push();
+    p.translate(headCenter.x, headCenter.y, 0);
+    p.ellipsoid(50 * s, 58 * s, 50 * s);
+    p.pop();
   }
 
-  ctx.save();
-  ctx.translate(followX, 0);
-  withRegionTransform(ctx, region, () => paintFigure(ctx, [...prims, ...grabPrims]));
-  ctx.restore();
+  // Grabbing hands turn red.
+  p.fill(HAND_GRAB_COLOR);
+  if (handClosed.left) {
+    sphere3D(p, leftWrist, 17 * s);
+  }
+  if (handClosed.right) {
+    sphere3D(p, rightWrist, 17 * s);
+  }
+
+  p.pop();
+}
+
+/** A foot as a flattened 3D ellipsoid sitting just below the ankle. */
+function foot3D(p: p5, ankle: ScreenPoint | null, rx: number, ry: number) {
+  if (!ankle) {
+    return;
+  }
+  p.push();
+  p.translate(ankle.x, ankle.y + ry * 0.2, 0);
+  p.ellipsoid(rx, ry, ry);
+  p.pop();
 }
 
 /**
