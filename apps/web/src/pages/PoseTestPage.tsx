@@ -4,7 +4,7 @@ import { AthleteStage } from "../components/AthleteStage";
 import { DummySplash } from "../components/DummySplash";
 import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses } from "../lib/savedPoses";
-import { useTempo } from "../lib/tempo";
+import { useGameTempo } from "../lib/tempo";
 import { secondaryAction } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
 
@@ -16,7 +16,7 @@ export function PoseTestPage() {
   const [selectedId, setSelectedId] = useState(starterPoses[0]?.id ?? "");
   const gameControls = useActiveGame();
   const { game, lastPose, lastPowerup, sendRoundSnapshot } = gameControls;
-  const tempo = useTempo(game?.playingStartedAt ?? null);
+  const tempo = useGameTempo();
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;

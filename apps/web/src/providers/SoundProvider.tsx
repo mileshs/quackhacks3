@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  applyNeutralSoundtrackPlayback,
   getBeatAtTime,
   getBpmAtTime,
   SOUND_EFFECT_ASSETS,
@@ -40,6 +41,8 @@ type SoundContextValue = {
   stopSoundtrack: () => void;
   triggerTimeWarp: () => void;
   getCurrentSoundtrack: () => HTMLAudioElement | null;
+  /** Cached soundtrack element (may not be playing); used for tempo metadata on non-dummy screens. */
+  getSoundtrackElement: (id: SoundtrackId) => HTMLAudioElement;
 };
 
 const SoundContext = createContext<SoundContextValue | null>(null);
@@ -85,6 +88,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
   const getSoundtrack = useCallback(
     (id: SoundtrackId) => {
       soundtrackRefs.current[id] ??= new Audio(SOUNDTRACK_ASSETS[id]);
+      applyNeutralSoundtrackPlayback(soundtrackRefs.current[id]);
       soundtrackRefs.current[id].volume = soundtrackVolume / 100;
       return soundtrackRefs.current[id];
     },
@@ -124,7 +128,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       soundtrack?.pause();
       if (soundtrack) {
         soundtrack.currentTime = 0;
-        soundtrack.playbackRate = 1;
+        applyNeutralSoundtrackPlayback(soundtrack);
       }
     }
 
@@ -145,7 +149,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
 
       const soundtrack = getSoundtrack(id);
       soundtrack.currentTime = 0;
-      soundtrack.playbackRate = 1;
+      applyNeutralSoundtrackPlayback(soundtrack);
       soundtrack.play().catch((err) => {
         console.warn("Soundtrack playback blocked or failed:", err);
       });
@@ -340,6 +344,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       stopSoundtrack,
       triggerTimeWarp,
       getCurrentSoundtrack,
+      getSoundtrackElement: getSoundtrack,
     }),
     [
       soundtrackVolume,
@@ -355,6 +360,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       stopSoundtrack,
       triggerTimeWarp,
       getCurrentSoundtrack,
+      getSoundtrack,
     ]
   );
 
