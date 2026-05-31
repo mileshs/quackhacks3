@@ -4,8 +4,10 @@ export const SOUNDTRACK_ASSETS = {
 } as const;
 
 export const SOUND_EFFECT_ASSETS = {
+  boo: "/assets/boo.mp3",
   bruh: "/assets/bruh.mp3",
   buttonClick: "/assets/button_click.mp3",
+  cheer: "/assets/cheer.mp3",
   countdown: "/assets/countdown.mp3",
   death: "/assets/death.mp3",
   excellent: "/assets/excellent.mp3",
@@ -26,8 +28,8 @@ export const SOUND_EFFECT_ASSETS = {
 export type SoundtrackId = keyof typeof SOUNDTRACK_ASSETS;
 export type SoundEffectId = keyof typeof SOUND_EFFECT_ASSETS;
 
+/** @deprecated Prefer SOUNDTRACK_ASSETS / SOUND_EFFECT_ASSETS */
 export const AUDIO_ASSETS = {
-  soundtrackNormal: SOUNDTRACK_ASSETS.normal,
   soundtrackSpeedy: SOUNDTRACK_ASSETS.speedy,
   timeWarp: SOUND_EFFECT_ASSETS.timeWarp,
 } as const;
@@ -121,12 +123,12 @@ export const TIME_WARP = {
   sfxBaseSeconds: 2.638, // measured fallback if the SFX element's duration is unavailable
   songPlaybackRate: 0.5,
   preservePitchDuringWarp: false, // false => the song pitches down as it slows
-  preserveSfxPitch: true, // false => the SFX pitches with its speed change
+  preserveSfxPitch: false, // false => the SFX pitches with its speed change
   sfxVolumeScale: 0.5,
 };
 
 export interface TimeWarpConfig {
-  soundEffectsVolume: number; // 0..1
+  masterVolume: number; // 0..1
 }
 
 // Triggers the time warp. Returns a cancel fn that restores the song immediately.
@@ -140,7 +142,7 @@ export function startTimeWarp(
 
   sfx.playbackRate = sfxRate;
   setPreservesPitch(sfx, TIME_WARP.preserveSfxPitch);
-  sfx.volume = config.soundEffectsVolume * TIME_WARP.sfxVolumeScale;
+  sfx.volume = config.masterVolume * TIME_WARP.sfxVolumeScale;
   sfx.currentTime = 0;
   sfx.play().catch((err) => {
     console.warn("Time warp SFX blocked or failed:", err);

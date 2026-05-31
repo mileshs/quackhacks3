@@ -12,8 +12,19 @@ const DUMMY_SPLASH_SEEN_KEY = "quackhacks:dummy:splashSeen";
 export function PoseTestPage() {
   const navigate = useNavigate();
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
+  const [previewPose, setPreviewPose] = useState<UniversalPose | null>(null);
   const [selectedId, setSelectedId] = useState(starterPoses[0]?.id ?? "");
-  const { claimedRole, claimRole, connectionStatus, game, roleError, sendRoleHeartbeat } = useActiveGame();
+  const {
+    claimedRole,
+    claimRole,
+    connectionStatus,
+    game,
+    lastPose,
+    lastPowerup,
+    roleError,
+    sendRoleHeartbeat,
+    sendRoundSnapshot
+  } = useActiveGame();
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
@@ -31,8 +42,21 @@ export function PoseTestPage() {
     };
   }, []);
 
-  const poseOptions = useMemo(() => [...starterPoses, ...savedPoses], [savedPoses]);
-  const targetPose = poseOptions.find((pose) => pose.id === selectedId) ?? poseOptions[0] ?? starterPoses[0];
+  useEffect(() => {
+    if (lastPose?.joints) {
+      setPreviewPose(lastPose);
+      setSelectedId(lastPose.id);
+    }
+  }, [lastPose]);
+
+  const poseOptions = useMemo(() => {
+    const base = [...starterPoses, ...savedPoses];
+    if (previewPose && !base.some((pose) => pose.id === previewPose.id)) {
+      return [...base, previewPose];
+    }
+    return base;
+  }, [savedPoses, previewPose]);
+  const targetPose = previewPose ?? poseOptions.find((pose) => pose.id === selectedId) ?? poseOptions[0] ?? starterPoses[0];
 
   useEffect(() => {
     if (connectionStatus === "connected" && game?.activeGame && claimedRole !== GameRole.Dummy && !roleError) {
@@ -89,6 +113,8 @@ export function PoseTestPage() {
         savedPoseIds={savedPoses.map((pose) => pose.id)}
         selectedPoseId={targetPose.id}
         onSelectPose={(pose) => setSelectedId(pose.id)}
+        powerupActivation={lastPowerup}
+        onFinishWall={sendRoundSnapshot}
       />
     </>
   );

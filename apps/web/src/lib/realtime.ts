@@ -2,6 +2,10 @@ import type { GameClientMessage, GameServerMessage, RealtimePoseMessage } from "
 
 export type GameSocketMessage = GameServerMessage | RealtimePoseMessage;
 
+export function createHonoWebSocket() {
+  return createGameWebSocket();
+}
+
 export function createGameWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const host = import.meta.env.VITE_WS_HOST ?? window.location.host;
@@ -29,6 +33,8 @@ export function parseGameSocketMessage(rawMessage: MessageEvent["data"]): GameSo
     if (
       parsed.type === "game:state" ||
       parsed.type === "pose:update" ||
+      parsed.type === "round:snapshot" ||
+      parsed.type === "powerup:activate" ||
       parsed.type === "role:accepted" ||
       parsed.type === "role:rejected" ||
       parsed.type === "error"

@@ -4,7 +4,9 @@ import {
   type ActiveGameState,
   type GameClientMessage,
   type GameServerMessage,
-  type RealtimePoseMessage
+  type PowerupActivatePayload,
+  type RealtimePoseMessage,
+  type RoundSnapshotPayload
 } from "@quackhacks/shared";
 
 const GAME_STATE_KEY = "global-game-state";
@@ -87,6 +89,24 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       this.broadcast({
         type: "pose:update",
         pose: message.pose,
+        sentAt: new Date().toISOString()
+      });
+      return;
+    }
+
+    if (message.type === "round:snapshot") {
+      this.broadcast({
+        type: "round:snapshot",
+        payload: message.payload,
+        sentAt: new Date().toISOString()
+      });
+      return;
+    }
+
+    if (message.type === "powerup:activate") {
+      this.broadcast({
+        type: "powerup:activate",
+        payload: message.payload,
         sentAt: new Date().toISOString()
       });
     }
@@ -306,7 +326,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
 
 function parseClientMessage(rawMessage: string): GameClientMessage | null {
   try {
-    const parsed = JSON.parse(rawMessage) as Partial<GameClientMessage>;
+    const parsed = JSON.parse(rawMessage) as Partial<GameClientMessage> & { payload?: unknown };
 
     if (parsed.type === "game:start" || parsed.type === "game:end") {
       return { type: parsed.type };
@@ -329,6 +349,20 @@ function parseClientMessage(rawMessage: string): GameClientMessage | null {
         pose: parsed.pose
       };
     }
+
+    if (parsed.type === "round:snapshot" && isRoundSnapshotPayload(parsed.payload)) {
+      return {
+        type: "round:snapshot",
+        payload: parsed.payload
+      };
+    }
+
+    if (parsed.type === "powerup:activate" && isPowerupActivatePayload(parsed.payload)) {
+      return {
+        type: "powerup:activate",
+        payload: parsed.payload
+      };
+    }
   } catch {
     return null;
   }
@@ -345,4 +379,30 @@ function createEmptyRoles(): ActiveGameState["roles"] {
 
 function isGameRole(role: unknown): role is GameRole {
   return role === GameRole.Dummy || role === GameRole.Saboteur;
+}
+
+function isRoundSnapshotPayload(payload: unknown): payload is RoundSnapshotPayload {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const candidate = payload as Partial<RoundSnapshotPayload>;
+  return (
+    typeof candidate.matchPercent === "number" &&
+    (candidate.band === "PERFECT" || candidate.band === "CLEAN" || candidate.band === "CRASH") &&
+    typeof candidate.sentAt === "string"
+  );
+}
+
+function isPowerupActivatePayload(payload: unknown): payload is PowerupActivatePayload {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const candidate = payload as Partial<PowerupActivatePayload>;
+  return (
+    (candidate.kind === "blindness" || candidate.kind === "mirror") &&
+    (candidate.durationMs === undefined || typeof candidate.durationMs === "number") &&
+    typeof candidate.sentAt === "string"
+  );
 }

@@ -1,3 +1,5 @@
+import type { PowerupActivatePayload, RoundSnapshotPayload } from "./powerups.js";
+
 export enum GameRole {
   Dummy = "dummy",
   Saboteur = "saboteur"
@@ -61,10 +63,14 @@ export type GameClientMessage =
   | { type: "game:end" }
   | { type: "role:claim"; role: GameRole }
   | { type: "role:heartbeat"; role: GameRole }
-  | { type: "pose:update"; pose: UniversalPose };
+  | { type: "pose:update"; pose: UniversalPose }
+  | { type: "round:snapshot"; payload: RoundSnapshotPayload }
+  | { type: "powerup:activate"; payload: PowerupActivatePayload };
 
 export type GameServerMessage =
   | { type: "game:state"; state: ActiveGameState }
   | { type: "role:accepted"; role: GameRole }
   | { type: "role:rejected"; role: GameRole; reason: "taken" | "inactive-game" | "invalid-role" }
+  | { type: "round:snapshot"; payload: RoundSnapshotPayload; sentAt: string }
+  | { type: "powerup:activate"; payload: PowerupActivatePayload; sentAt: string }
   | { type: "error"; error: string };
