@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import {
+  HOLE_PADDING,
+  buildBlobFigure,
   starterPoses,
   universalHumanSize,
+  type FaceMode,
+  type FigurePrimitive,
   type JointName,
   type UniversalJoint,
   type UniversalPose
@@ -320,9 +324,62 @@ type SaboteurPoseEditorProps = {
   onChange: (pose: UniversalPose) => void;
 };
 
-const BLOB_FILL = "#2f86ff";
-
-type Point = { x: number; y: number };
+// Render shared figure primitives (universal-box pixel coords) as SVG. Both the blob
+// dummy and the hole cutout are built from `buildBlobFigure`, so the saboteur and the
+// athlete draw the exact same shape.
+function FigurePrimitives({ prims }: { prims: FigurePrimitive[] }) {
+  return (
+    <>
+      {prims.map((prim, index) => {
+        switch (prim.kind) {
+          case "capsule":
+            return (
+              <line
+                key={index}
+                x1={prim.a.x}
+                y1={prim.a.y}
+                x2={prim.b.x}
+                y2={prim.b.y}
+                stroke={prim.fill}
+                strokeWidth={prim.width}
+                strokeLinecap="round"
+              />
+            );
+          case "circle":
+            return <circle key={index} cx={prim.c.x} cy={prim.c.y} r={prim.r} fill={prim.fill} />;
+          case "ellipse":
+            return <ellipse key={index} cx={prim.c.x} cy={prim.c.y} rx={prim.rx} ry={prim.ry} fill={prim.fill} />;
+          case "polyline":
+            return (
+              <polyline
+                key={index}
+                points={prim.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                fill="none"
+                stroke={prim.stroke}
+                strokeWidth={prim.width}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          case "quad":
+            return (
+              <path
+                key={index}
+                d={`M ${prim.from.x} ${prim.from.y} Q ${prim.control.x} ${prim.control.y} ${prim.to.x} ${prim.to.y}`}
+                fill="none"
+                stroke={prim.stroke}
+                strokeWidth={prim.width}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          default:
+            return null;
+        }
+      })}
+    </>
+  );
+}
 
 // The play-area bounding box plus the extended floor line, drawn inside the
 // dummy transform so it lines up exactly with the figure and movement bounds.
@@ -351,117 +408,15 @@ function StageBounds() {
   );
 }
 
-function BlobFigure({ jointMap, faceMode = "happy" }: { jointMap: Map<JointName, UniversalJoint>; faceMode?: "happy" | "squeeze" }) {
-  const W = universalHumanSize.width;
-  const H = universalHumanSize.height;
-
-  const at = (name: JointName): Point | null => {
-    const joint = jointMap.get(name);
-    return joint ? { x: joint.x * W, y: joint.y * H } : null;
-  };
-
-  const head = at("head");
-  const neck = at("neck");
-  const leftShoulder = at("leftShoulder");
-  const rightShoulder = at("rightShoulder");
-  const leftElbow = at("leftElbow");
-  const rightElbow = at("rightElbow");
-  const leftWrist = at("leftWrist");
-  const rightWrist = at("rightWrist");
-  const hips = at("hips");
-  const leftKnee = at("leftKnee");
-  const rightKnee = at("rightKnee");
-  const leftAnkle = at("leftAnkle");
-  const rightAnkle = at("rightAnkle");
-
-  const capsule = (a: Point | null, b: Point | null, width: number, key: string) => {
-    if (!a || !b) {
-      return null;
-    }
-    return (
-      <line
-        key={key}
-        x1={a.x}
-        y1={a.y}
-        x2={b.x}
-        y2={b.y}
-        stroke={BLOB_FILL}
-        strokeWidth={width}
-        strokeLinecap="round"
-      />
-    );
-  };
-
-  const blob = (point: Point | null, radius: number, key: string) => {
-    if (!point) {
-      return null;
-    }
-    return <circle key={key} cx={point.x} cy={point.y} r={radius} fill={BLOB_FILL} />;
-  };
-
-  const headCenter = head ?? neck ?? { x: W / 2, y: H * 0.13 };
-  const headRx = 50;
-  const headRy = 58;
-  const faceCx = headCenter.x;
-  const faceCy = headCenter.y + 6;
+function BlobFigure({ jointMap, faceMode = "happy" }: { jointMap: Map<JointName, UniversalJoint>; faceMode?: FaceMode }) {
+  const prims = useMemo(
+    () => buildBlobFigure(Array.from(jointMap.values()), { withFace: true, faceMode }),
+    [jointMap, faceMode]
+  );
 
   return (
     <g>
-      {/* legs */}
-      {capsule(hips, leftKnee, 38, "leg-l-upper")}
-      {capsule(leftKnee, leftAnkle, 34, "leg-l-lower")}
-      {capsule(hips, rightKnee, 38, "leg-r-upper")}
-      {capsule(rightKnee, rightAnkle, 34, "leg-r-lower")}
-      {leftAnkle ? <ellipse cx={leftAnkle.x} cy={leftAnkle.y + 2} rx={19} ry={12} fill={BLOB_FILL} /> : null}
-      {rightAnkle ? <ellipse cx={rightAnkle.x} cy={rightAnkle.y + 2} rx={19} ry={12} fill={BLOB_FILL} /> : null}
-
-      {/* arms */}
-      {capsule(leftShoulder, leftElbow, 28, "arm-l-upper")}
-      {capsule(leftElbow, leftWrist, 26, "arm-l-lower")}
-      {capsule(rightShoulder, rightElbow, 28, "arm-r-upper")}
-      {capsule(rightElbow, rightWrist, 26, "arm-r-lower")}
-      {blob(leftWrist, 15, "hand-l")}
-      {blob(rightWrist, 15, "hand-r")}
-
-      {/* torso blob */}
-      {capsule(leftShoulder, rightShoulder, 44, "torso-shoulders")}
-      {capsule(neck, hips, 50, "torso-spine")}
-      {blob(neck, 24, "torso-neck")}
-      {blob(hips, 27, "torso-hips")}
-
-      {/* neck + head */}
-      {capsule(head, neck, 28, "neck-link")}
-      <ellipse cx={headCenter.x} cy={headCenter.y} rx={headRx} ry={headRy} fill={BLOB_FILL} />
-
-      {/* face */}
-      {faceMode === "squeeze" ? (
-        <g stroke="#0a0a0a" strokeLinecap="round" strokeLinejoin="round" fill="none">
-          <path d={`M ${faceCx - 24} ${faceCy - 8} l 14 8 l -14 8`} strokeWidth={3.4} />
-          <path d={`M ${faceCx + 24} ${faceCy - 8} l -14 8 l 14 8`} strokeWidth={3.4} />
-          <path d={`M ${faceCx} ${faceCy + 2} l 0 9 l 7 0`} strokeWidth={2.6} />
-          <path d={`M ${faceCx - 11} ${faceCy + 26} q 11 -10 22 0`} strokeWidth={3.4} />
-        </g>
-      ) : (
-        <g>
-          <ellipse cx={faceCx - 16} cy={faceCy - 4} rx={6} ry={9} fill="#0a0a0a" />
-          <ellipse cx={faceCx + 16} cy={faceCy - 4} rx={6} ry={9} fill="#0a0a0a" />
-          <path
-            d={`M ${faceCx} ${faceCy + 4} l 0 9 l 7 0`}
-            fill="none"
-            stroke="#0a0a0a"
-            strokeWidth={2.6}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d={`M ${faceCx - 13} ${faceCy + 24} q 13 12 26 0`}
-            fill="none"
-            stroke="#0a0a0a"
-            strokeWidth={3}
-            strokeLinecap="round"
-          />
-        </g>
-      )}
+      <FigurePrimitives prims={prims} />
     </g>
   );
 }
@@ -486,10 +441,10 @@ function SaboteurPosePreview({ pose }: { pose: UniversalPose }) {
 }
 
 const WALL_FILL = "#4a5b86";
-const HOLE_PADDING = 20;
 
 // The figure's solid outline, used as the cutout for the hole. `pad` inflates
-// every limb so the hole leaves generous room around the pose.
+// every limb so the hole leaves generous room around the pose. Shares geometry with
+// the blob dummy (no face), so the hole matches the figure exactly on both screens.
 function FigureSilhouette({
   jointMap,
   color,
@@ -499,70 +454,14 @@ function FigureSilhouette({
   color: string;
   pad: number;
 }) {
-  const W = universalHumanSize.width;
-  const H = universalHumanSize.height;
-
-  const at = (name: JointName): Point | null => {
-    const joint = jointMap.get(name);
-    return joint ? { x: joint.x * W, y: joint.y * H } : null;
-  };
-
-  const head = at("head");
-  const neck = at("neck");
-  const leftShoulder = at("leftShoulder");
-  const rightShoulder = at("rightShoulder");
-  const leftElbow = at("leftElbow");
-  const rightElbow = at("rightElbow");
-  const leftWrist = at("leftWrist");
-  const rightWrist = at("rightWrist");
-  const hips = at("hips");
-  const leftKnee = at("leftKnee");
-  const rightKnee = at("rightKnee");
-  const leftAnkle = at("leftAnkle");
-  const rightAnkle = at("rightAnkle");
-
-  const seg = (a: Point | null, b: Point | null, width: number, key: string) =>
-    a && b ? (
-      <line
-        key={key}
-        x1={a.x}
-        y1={a.y}
-        x2={b.x}
-        y2={b.y}
-        stroke={color}
-        strokeWidth={width + pad * 2}
-        strokeLinecap="round"
-      />
-    ) : null;
-
-  const dot = (point: Point | null, radius: number, key: string) =>
-    point ? <circle key={key} cx={point.x} cy={point.y} r={radius + pad} fill={color} /> : null;
-
-  const headCenter = head ?? neck ?? { x: W / 2, y: H * 0.13 };
+  const prims = useMemo(
+    () => buildBlobFigure(Array.from(jointMap.values()), { color, pad }),
+    [jointMap, color, pad]
+  );
 
   return (
     <g>
-      {seg(hips, leftKnee, 38, "leg-l-upper")}
-      {seg(leftKnee, leftAnkle, 34, "leg-l-lower")}
-      {seg(hips, rightKnee, 38, "leg-r-upper")}
-      {seg(rightKnee, rightAnkle, 34, "leg-r-lower")}
-      {leftAnkle ? <ellipse cx={leftAnkle.x} cy={leftAnkle.y + 2} rx={19 + pad} ry={12 + pad} fill={color} /> : null}
-      {rightAnkle ? <ellipse cx={rightAnkle.x} cy={rightAnkle.y + 2} rx={19 + pad} ry={12 + pad} fill={color} /> : null}
-
-      {seg(leftShoulder, leftElbow, 28, "arm-l-upper")}
-      {seg(leftElbow, leftWrist, 26, "arm-l-lower")}
-      {seg(rightShoulder, rightElbow, 28, "arm-r-upper")}
-      {seg(rightElbow, rightWrist, 26, "arm-r-lower")}
-      {dot(leftWrist, 15, "hand-l")}
-      {dot(rightWrist, 15, "hand-r")}
-
-      {seg(leftShoulder, rightShoulder, 44, "torso-shoulders")}
-      {seg(neck, hips, 50, "torso-spine")}
-      {dot(neck, 24, "torso-neck")}
-      {dot(hips, 27, "torso-hips")}
-
-      {seg(head, neck, 28, "neck-link")}
-      <ellipse cx={headCenter.x} cy={headCenter.y} rx={50 + pad} ry={58 + pad} fill={color} />
+      <FigurePrimitives prims={prims} />
     </g>
   );
 }
@@ -1042,7 +941,7 @@ function applyWavePose(pose: UniversalPose, elapsedSeconds: number, _legSide: "l
   return { ...pose, joints };
 }
 
-function getPosePoint(event: PointerEvent<SVGSVGElement>, svg: SVGSVGElement | null) {
+function getPosePoint(event: PointerEvent<Element>, svg: SVGSVGElement | null) {
   if (!svg) {
     return null;
   }
