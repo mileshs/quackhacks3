@@ -58,6 +58,8 @@ export type ActiveGameState = {
   endReason: "manual" | "role-disconnected" | "role-timeout" | null;
   phase: GamePhase;
   countdownStartedAt: string | null;
+  /** Set when the game enters the `playing` phase; the shared anchor for the 8-count tempo. */
+  playingStartedAt: string | null;
   updatedAt: string;
   playerCount: number;
   roles: Record<GameRole, RoleClaim>;
