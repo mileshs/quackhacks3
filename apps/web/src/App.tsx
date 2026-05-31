@@ -1,4 +1,4 @@
-import { Agentation } from "agentation";
+import { lazy, Suspense } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { GamePage } from "./pages/GamePage";
 import { HomePage } from "./pages/HomePage";
@@ -17,6 +17,10 @@ const navItems = [
   { to: "/leaderboard", label: "Leaderboard" },
   { to: "/settings", label: "Settings" }
 ];
+
+const DevAgentation = import.meta.env.DEV
+  ? lazy(() => import("./DevAgentation").then((mod) => ({ default: mod.DevAgentation })))
+  : null;
 
 export function App() {
   return (
@@ -46,7 +50,11 @@ export function App() {
           </Routes>
         </main>
       </div>
-      {import.meta.env.DEV && <Agentation />}
+      {DevAgentation ? (
+        <Suspense fallback={null}>
+          <DevAgentation />
+        </Suspense>
+      ) : null}
     </>
   );
 }
