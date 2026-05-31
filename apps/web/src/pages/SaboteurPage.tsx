@@ -23,6 +23,7 @@ import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
 import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
 import { SaboteurTutorialOverlay } from "../components/SaboteurTutorialOverlay";
+import { GameTempoBridge } from "../components/GameTempoBridge";
 import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
@@ -41,7 +42,7 @@ import {
   saboteurViewport
 } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
-import { useGameTempo } from "../lib/tempo";
+import type { TempoState } from "../lib/tempo";
 
 const JOINT_HANDLE_RADIUS = 10;
 
@@ -219,7 +220,7 @@ export function SaboteurPage() {
   const { connectionStatus, game, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
   // Saboteur-only queue of poses to feed the dummy, one per 8-count cycle.
   const [queue, setQueue] = useState<UniversalPose[]>([]);
-  const tempo = useGameTempo();
+  const [tempo, setTempo] = useState<TempoState | null>(null);
   const lastFedCycleRef = useRef<number | null>(null);
   const [showSplash, setShowSplash] = useState(true);
   const [tutorialRun, setTutorialRun] = useState(0);
@@ -465,8 +466,9 @@ export function SaboteurPage() {
     <>
       {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
       <RoleGameShell role={GameRole.Saboteur} controls={gameControls}>
-      <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
-      <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
+        <GameTempoBridge onTempo={setTempo} />
+        <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
+        <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)] lg:items-stretch">
         <div className="flex min-h-0 flex-col gap-3">
