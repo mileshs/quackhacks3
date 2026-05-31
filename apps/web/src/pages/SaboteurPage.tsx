@@ -27,7 +27,8 @@ import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
 import { useDevSection, useSettings } from "../lib/settings";
-import { SKELETON_ADJUSTMENT_SOUNDS, useSound } from "../providers/SoundProvider";
+import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
+import { SKELETON_ADJUSTMENT_SOUNDS } from "../providers/SoundProvider";
 import {
   cx,
   saboteurCard,
@@ -871,7 +872,7 @@ function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
 }
 
 function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
-  const { playExclusiveRandomSoundEffect, stopExclusiveSoundEffect } = useSound();
+  const { playExclusiveRandomSoundEffect, stopExclusiveSoundEffect } = useRoleScopedSound(GameRole.Saboteur);
   const svgRef = useRef<SVGSVGElement>(null);
   const latestPoseRef = useRef(pose);
   const wriggleBaseRef = useRef<UniversalPose | null>(null);

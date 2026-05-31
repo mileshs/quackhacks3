@@ -1,3 +1,5 @@
+import { GameRole } from "@quackhacks/shared";
+
 export const SOUNDTRACK_ASSETS = {
   mainMenu: "/assets/main_menu_theme.mp3",
   normal: "/assets/soundtrack_normal.mp3",
@@ -34,6 +36,42 @@ export type SoundEffectId = keyof typeof SOUND_EFFECT_ASSETS;
 
 /** Soundtracks that repeat until stopped (menu ambience, not gameplay tracks). */
 export const LOOPING_SOUNDTRACK_IDS = new Set<SoundtrackId>(["mainMenu"]);
+
+/** Shared game moments — dummy / projector client only. */
+export const DUMMY_AUDIENCE_SOUND_EFFECTS = new Set<SoundEffectId>([
+  "boo",
+  "bruh",
+  "cheer",
+  "countdown",
+  "death",
+  "excellent",
+  "gameOver",
+  "good",
+  "great",
+  "perfect",
+  "wtf",
+]);
+
+/** Saboteur device only (puppet editing, etc.). */
+export const SABOTEUR_LOCAL_SOUND_EFFECTS = new Set<SoundEffectId>([
+  "skeletonAdjustment1",
+  "skeletonAdjustment2",
+  "skeletonAdjustment3",
+  "skeletonAdjustment4",
+  "skeletonAdjustment5",
+]);
+
+export function canPlaySoundEffect(id: SoundEffectId, role: GameRole | null): boolean {
+  if (DUMMY_AUDIENCE_SOUND_EFFECTS.has(id)) {
+    return role === GameRole.Dummy;
+  }
+
+  if (SABOTEUR_LOCAL_SOUND_EFFECTS.has(id)) {
+    return role === GameRole.Saboteur;
+  }
+
+  return true;
+}
 
 /** @deprecated Prefer SOUNDTRACK_ASSETS / SOUND_EFFECT_ASSETS */
 export const AUDIO_ASSETS = {

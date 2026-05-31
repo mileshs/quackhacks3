@@ -3,12 +3,12 @@ import { GameRole } from "@quackhacks/shared";
 import { useNavigate } from "react-router-dom";
 import { queueGameNotice } from "../lib/gameNotifications";
 import { useDevSection } from "../lib/settings";
+import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import { useSoundtrackGameSync } from "../hooks/useSoundtrackGameSync";
 import { GameTempoProvider, useGameTempo } from "../lib/tempo";
 import { cx } from "../lib/ui";
 import { TempoIndicator } from "./TempoIndicator";
 import type { useActiveGame } from "../lib/useActiveGame";
-import { useSound } from "../providers/SoundProvider";
 
 // Buttons inside the cream Settings dropdown (dark text on light surfaces).
 const devMenuButton =
@@ -38,7 +38,7 @@ const roleLabels = {
 
 export function RoleGameShell({ role, controls, children }: RoleGameShellProps) {
   const navigate = useNavigate();
-  const { playSoundEffect } = useSound();
+  const { playSoundEffect } = useRoleScopedSound(role);
   const lastCountdownAnchorRef = useRef<string | null>(null);
   const playedGameOverRef = useRef(false);
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);

@@ -2,7 +2,8 @@ import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useSound } from "../providers/SoundProvider";
+import { readPersistedClaimedRole } from "../lib/claimedRoleStorage";
+import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import {
   dummyFinalStats,
   finalResultCopy,
@@ -243,7 +244,7 @@ export function FinalScreenPage() {
   const [searchParams] = useSearchParams();
   const initialWinner = searchParams.get("winner") === "saboteur" ? "saboteur" : "dummy";
   const [winner, setWinner] = useState<FinalWinner>(initialWinner);
-  const { playSoundEffect } = useSound();
+  const { playSoundEffect } = useRoleScopedSound(readPersistedClaimedRole());
   const result = finalResultCopy[winner];
   const isDev = import.meta.env.DEV;
 

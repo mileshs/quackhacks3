@@ -7,6 +7,7 @@ import {
   type RoundSnapshotPayload,
   type UniversalPose
 } from "@quackhacks/shared";
+import { clearPersistedClaimedRole, writePersistedClaimedRole } from "./claimedRoleStorage";
 import { createGameWebSocket, parseGameSocketMessage, sendGameSocketMessage } from "./realtime";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "unavailable";
@@ -53,11 +54,13 @@ export function useActiveGame() {
       if (message?.type === "role:accepted") {
         setClaimedRole(message.role);
         setRoleError(null);
+        writePersistedClaimedRole(message.role);
       }
 
       if (message?.type === "role:rejected") {
         setClaimedRole(null);
         setRoleError(message.reason);
+        clearPersistedClaimedRole();
       }
 
       if (message?.type === "pose:update") {
@@ -76,11 +79,13 @@ export function useActiveGame() {
     socket.addEventListener("close", () => {
       setConnectionStatus("disconnected");
       setClaimedRole(null);
+      clearPersistedClaimedRole();
     });
 
     socket.addEventListener("error", () => {
       setConnectionStatus("unavailable");
       setClaimedRole(null);
+      clearPersistedClaimedRole();
     });
 
     return () => {
