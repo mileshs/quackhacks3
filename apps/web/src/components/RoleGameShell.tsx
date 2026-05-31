@@ -1,9 +1,16 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { GameRole } from "@quackhacks/shared";
 import { useNavigate } from "react-router-dom";
 import { queueGameNotice } from "../lib/gameNotifications";
-import { cx, secondaryAction } from "../lib/ui";
+import { useDevSection } from "../lib/settings";
+import { cx } from "../lib/ui";
 import type { useActiveGame } from "../lib/useActiveGame";
+
+// Buttons inside the cream Settings dropdown (dark text on light surfaces).
+const devMenuButton =
+  "w-full rounded-[12px] bg-white px-3 py-2 text-sm font-extrabold text-[#2b303b] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] transition-colors hover:bg-[#fff7e8]";
+const devMenuDanger =
+  "w-full rounded-[12px] bg-[#ef5c6b] px-3 py-2 text-sm font-extrabold text-white shadow-[inset_0_1.5px_0_rgba(255,255,255,0.3)] transition-[filter] hover:brightness-105";
 
 const COUNTDOWN_SECONDS = 3;
 
@@ -120,14 +127,35 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
     setRoleReady(role, !selfReady);
   }
 
-  function startDevSolo() {
+  const startDevSolo = useCallback(() => {
     if (hasActiveGame) {
       devStartGame();
       return;
     }
 
     setDevSolo(true);
-  }
+  }, [hasActiveGame, devStartGame]);
+
+  // Game controls (win / end / dev bypass) live in the global Settings menu under Dev Mode.
+  // Only the game pages mount RoleGameShell, so these only appear on game screens.
+  const gameDevSection = useMemo(
+    () => (
+      <div className="flex flex-col gap-2">
+        <span className="text-[11px] font-extrabold tracking-[0.12em] text-[#a89a82] uppercase">Game</span>
+        <button className={devMenuButton} type="button" onClick={() => navigate(`/score?winner=${role}`)}>
+          I Won
+        </button>
+        <button className={devMenuDanger} type="button" onClick={() => setConfirmEndOpen(true)}>
+          End Game
+        </button>
+        <button className={devMenuButton} type="button" onClick={startDevSolo}>
+          Dev Bypass
+        </button>
+      </div>
+    ),
+    [navigate, role, startDevSolo]
+  );
+  useDevSection("game", gameDevSection);
 
   const overlay = playing ? null : (
     <RoleLobbyOverlay
@@ -139,9 +167,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
       countdownSeconds={countdownSeconds}
       hasActiveGame={hasActiveGame}
       hasClaimedRole={hasClaimedRole}
-      isDev={isDev}
       onReady={toggleReady}
-      onDevStart={startDevSolo}
     />
   );
 
@@ -157,15 +183,6 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
       </div>
 
       {overlay}
-
-      <div className="fixed top-[5.15rem] right-4 z-40 flex flex-wrap justify-end gap-2">
-        <button className={secondaryAction} type="button" onClick={() => navigate(`/score?winner=${role}`)}>
-          I Won
-        </button>
-        <button className={cx(secondaryAction, "border-[#ef5c6b]/40 bg-[#ef5c6b]/18 text-white")} type="button" onClick={() => setConfirmEndOpen(true)}>
-          End Game
-        </button>
-      </div>
 
       {confirmEndOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/72 px-4 backdrop-blur-[3px]" role="dialog" aria-modal="true">
@@ -199,9 +216,7 @@ type RoleLobbyOverlayProps = {
   countdownSeconds: number | null;
   hasActiveGame: boolean;
   hasClaimedRole: boolean;
-  isDev: boolean;
   onReady: () => void;
-  onDevStart: () => void;
 };
 
 function RoleLobbyOverlay({
@@ -213,9 +228,7 @@ function RoleLobbyOverlay({
   countdownSeconds,
   hasActiveGame,
   hasClaimedRole,
-  isDev,
-  onReady,
-  onDevStart
+  onReady
 }: RoleLobbyOverlayProps) {
   if (countdownSeconds) {
     return (
@@ -255,12 +268,6 @@ function RoleLobbyOverlay({
           {hasActiveGame && hasClaimedRole && otherJoined && !countdownSeconds ? (
             <button className="min-h-14 rounded-[1.15rem] border border-[#ee9a06] bg-[#ffaf09] px-8 text-lg font-black text-white uppercase shadow-[inset_0_3px_0_rgba(255,255,255,0.54),inset_0_-3px_0_rgba(206,120,0,0.22)] [text-shadow:0_2px_0_rgba(156,86,0,0.24)]" type="button" onClick={onReady}>
               {selfReady ? "Unready" : "Ready Up"}
-            </button>
-          ) : null}
-
-          {isDev ? (
-            <button className="mt-3 min-h-12 rounded-[1rem] bg-white px-6 font-black text-[#28303d] uppercase shadow-[inset_0_2px_0_rgba(255,255,255,0.8),inset_0_-3px_0_rgba(221,179,83,0.22)]" type="button" onClick={onDevStart}>
-              Dev Bypass
             </button>
           ) : null}
         </div>
