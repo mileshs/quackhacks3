@@ -2,23 +2,11 @@
   "name": "quackhacks3",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "pnpm --parallel --stream --filter @quackhacks/server --filter @quackhacks/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "cf:dev": "pnpm db:migrate:local && pnpm --filter @quackhacks/server cf:dev",
-    "cf:provision": "node --experimental-strip-types scripts/cloudflare-provision.ts",
-    "cf:deploy": "node --experimental-strip-types scripts/cloudflare-deploy.ts",
-    "cf:deploy:built": "node --experimental-strip-types scripts/cloudflare-deploy.ts --skip-build",
-    "cf:types": "wrangler types apps/server/src/worker-configuration.d.ts --config wrangler.jsonc",
-    "db:generate": "pnpm --filter @quackhacks/server db:generate",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local --config wrangler.jsonc",
-    "db:migrate:remote": "wrangler d1 migrations apply DB --remote --config wrangler.jsonc"
-  },
-  "devDependencies": {
-    "@types/node": "^25.9.1",
-    "wrangler": "^4.95.0"
+    "db:push": "pnpm --filter @quackhacks/server db:push"
   }
 }

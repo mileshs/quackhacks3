@@ -1,43 +1,29 @@
 import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { cx } from "../lib/ui";
-import { useActiveGame } from "../lib/useActiveGame";
 
-type HomeIcon = "pose" | "stop" | "trophy" | "gear";
+type HomeIcon = "pose" | "trophy" | "gear";
 
-const secondaryMenuItems: Array<{ to: string; label: string; icon: HomeIcon; tone: "light" }> = [
+const menuItems: Array<{ to: string; label: string; icon: HomeIcon; tone: "primary" | "light" }> = [
+  { to: "/game", label: "New Game", icon: "pose", tone: "primary" },
   { to: "/leaderboard", label: "Leaderboard", icon: "trophy", tone: "light" },
   { to: "/settings", label: "Settings", icon: "gear", tone: "light" }
 ];
 
 const menuButtonBase =
-  "relative grid min-h-[clamp(4rem,7.25svh,4.85rem)] grid-cols-[5.85rem_1fr] items-center rounded-[1.45rem] px-7 py-2 pl-3 text-[clamp(1.34rem,1.7vw,1.8rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 min-[1181px]:grid-cols-[6.65rem_1fr] min-[1181px]:rounded-[1.62rem] min-[1181px]:text-[clamp(1.45rem,1.84vw,1.8rem)]";
+  "relative grid min-h-[4.85rem] grid-cols-[6.5rem_1fr] items-center rounded-[1.55rem] px-7 py-2 pl-3 text-[clamp(1.34rem,1.7vw,1.8rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 min-[1181px]:grid-cols-[7.45rem_1fr] min-[1181px]:rounded-[1.72rem] min-[1181px]:text-[clamp(1.45rem,1.84vw,1.8rem)]";
 
 const menuButtonTone = {
   primary:
     "border border-[#ee9a06] bg-[#ffaf09] text-white shadow-[inset_0_3px_0_rgba(255,255,255,0.54),inset_0_-3px_0_rgba(206,120,0,0.22)] [text-shadow:0_2px_0_rgba(156,86,0,0.24)] hover:bg-[#f7a407]",
-  danger:
-    "border border-[#d93236] bg-[#ef4b4f] text-white shadow-[inset_0_3px_0_rgba(255,255,255,0.42),inset_0_-3px_0_rgba(142,20,27,0.28)] [text-shadow:0_2px_0_rgba(100,10,16,0.24)] hover:bg-[#df3e43]",
   light:
     "bg-[#fff4df] text-[#28303d] shadow-[inset_0_2px_0_rgba(255,255,255,0.68),inset_0_-3px_0_rgba(221,179,83,0.22)] [text-shadow:0_1px_0_rgba(255,255,255,0.45)] hover:bg-[#f8ead0]"
-} satisfies Record<"primary" | "danger" | "light", string>;
+} satisfies Record<(typeof menuItems)[number]["tone"], string>;
 
 function MenuIcon({ icon }: { icon: HomeIcon }) {
   if (icon === "pose") {
     return <img className="block size-14 object-contain" src="/new-game-icon.png" alt="" aria-hidden="true" />;
-  }
-
-  if (icon === "stop") {
-    return (
-      <svg className="size-12 overflow-visible" viewBox="0 0 64 64" aria-hidden="true">
-        <path
-          fill="#fff6ec"
-          d="M22 8h20l14 14v20L42 56H22L8 42V22L22 8Zm2.6 12.2a4.4 4.4 0 0 0-4.4 4.4v14.8a4.4 4.4 0 0 0 4.4 4.4h14.8a4.4 4.4 0 0 0 4.4-4.4V24.6a4.4 4.4 0 0 0-4.4-4.4H24.6Z"
-        />
-        <rect x="24" y="24" width="16" height="16" rx="3.8" fill="#d93236" />
-      </svg>
-    );
   }
 
   if (icon === "trophy") {
@@ -104,51 +90,25 @@ function HomeDecor() {
 }
 
 export function HomePage() {
-  const navigate = useNavigate();
-  const { game, startGame, endGame } = useActiveGame();
-  const isGameActive = game?.activeGame ?? false;
-
-  function openGame() {
-    if (!isGameActive) {
-      startGame();
-    }
-
-    navigate("/game");
-  }
-
   return (
     <section
-      className="fixed inset-0 z-20 flex min-h-svh items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_23%,rgba(255,248,190,0.42)_0_8.5rem,rgba(255,248,190,0)_25rem),radial-gradient(circle_at_98%_-10%,rgba(255,248,210,0.3)_0_16rem,rgba(255,248,210,0)_16.08rem),linear-gradient(145deg,#ffe066_0%,#ffd13c_43%,#ffc127_100%)] px-4 py-[clamp(1rem,3svh,2.5rem)] font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] text-[#28303d] before:absolute before:inset-0 before:bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0_1px,transparent_1.45px),linear-gradient(105deg,rgba(255,247,171,0.22),transparent_42%)] before:bg-[length:17px_17px,100%_100%] before:opacity-[0.48]"
+      className="fixed inset-0 z-20 grid min-h-svh items-start justify-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_23%,rgba(255,248,190,0.42)_0_8.5rem,rgba(255,248,190,0)_25rem),radial-gradient(circle_at_98%_-10%,rgba(255,248,210,0.3)_0_16rem,rgba(255,248,210,0)_16.08rem),linear-gradient(145deg,#ffe066_0%,#ffd13c_43%,#ffc127_100%)] font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] text-[#28303d] before:absolute before:inset-0 before:bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0_1px,transparent_1.45px),linear-gradient(105deg,rgba(255,247,171,0.22),transparent_42%)] before:bg-[length:17px_17px,100%_100%] before:opacity-[0.48]"
       aria-labelledby="home-title"
     >
       <HomeDecor />
-      <div className="relative z-[2] flex max-h-full w-[min(31vw,500px)] min-w-[370px] flex-col items-center justify-center gap-[clamp(1rem,3.2svh,1.9rem)] max-[430px]:min-w-0 max-[430px]:w-full">
+      <div className="relative z-[2] mt-[clamp(4.6rem,10.8vh,6.6rem)] grid w-[min(31vw,500px)] min-w-[370px] justify-items-center max-[430px]:min-w-[calc(100vw-2rem)]">
         <h1 id="home-title" className="sr-only">
           Poses for Dummies
         </h1>
         <img
-          className="block w-[clamp(300px,27vw,455px)] max-w-full shrink drop-shadow-[0_16px_13px_rgba(143,101,11,0.24)]"
+          className="block w-[clamp(390px,28.7vw,485px)] max-w-full drop-shadow-[0_16px_13px_rgba(143,101,11,0.24)]"
           src="/poses-for-dummies-logo.png"
           alt="Poses for Dummies"
         />
-        <nav className="flex w-[clamp(370px,24.2vw,406px)] max-w-full flex-col gap-[clamp(0.7rem,1.8svh,1.35rem)]" aria-label="Home">
-          <button className={cx(menuButtonBase, menuButtonTone.primary)} type="button" onClick={openGame}>
-            <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
-              <MenuIcon icon="pose" />
-            </span>
-            <span>{isGameActive ? "Join Game" : "New Game"}</span>
-          </button>
-          {isGameActive ? (
-            <button className={cx(menuButtonBase, menuButtonTone.danger)} type="button" onClick={endGame}>
-              <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
-                <MenuIcon icon="stop" />
-              </span>
-              <span>End Game</span>
-            </button>
-          ) : null}
-          {secondaryMenuItems.map((item) => (
+        <nav className="mt-[clamp(1.15rem,2.7vh,1.65rem)] grid w-[clamp(370px,24.2vw,406px)] max-w-full gap-[clamp(1.15rem,2.6vh,1.55rem)]" aria-label="Home">
+          {menuItems.map((item) => (
             <Link key={item.to} className={cx(menuButtonBase, menuButtonTone[item.tone])} to={item.to}>
-              <span className="grid size-[3.75rem] place-items-center justify-self-center text-[#ff8217]">
+              <span className={cx("grid size-[3.75rem] place-items-center justify-self-center", item.tone === "primary" ? "drop-shadow-sm" : "text-[#ff8217]")}>
                 <MenuIcon icon={item.icon} />
               </span>
               <span>{item.label}</span>

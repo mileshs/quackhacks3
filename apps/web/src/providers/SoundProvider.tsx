@@ -163,7 +163,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     }
 
     timeWarpCancelRef.current = startTimeWarp(soundtrack, getSoundEffect("timeWarp"), {
-      soundEffectsVolume: soundEffectsVolume / 100,
+      masterVolume: soundEffectsVolume / 100,
     });
   }, [getCurrentSoundtrack, getSoundEffect, soundEffectsVolume]);
 
