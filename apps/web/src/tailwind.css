@@ -58,6 +58,22 @@
 
 /* ===== Saboteur splash screen ===== */
 @layer components {
+  .score-flight-chip {
+    position: absolute;
+    display: block;
+    color: #ffd65c;
+    font-family: Nunito, Inter, ui-sans-serif, system-ui, sans-serif;
+    font-size: clamp(1.8rem, 4vw, 3.4rem);
+    font-weight: 950;
+    line-height: 1;
+    text-shadow:
+      0 3px 0 rgba(60, 36, 0, 0.34),
+      0 10px 20px rgba(255, 198, 50, 0.28);
+    transform: translate(-50%, -50%);
+    animation: score-flight 1.05s cubic-bezier(0.16, 0.92, 0.3, 1) forwards;
+    will-change: transform, opacity, filter;
+  }
+
   .sabotage-splash {
     position: fixed;
     inset: 0;
@@ -390,6 +406,34 @@
   }
 }
 
+@keyframes score-flight {
+  0% {
+    opacity: 0;
+    filter: saturate(1.25) brightness(1.16);
+    transform: translate(-50%, -50%) translate3d(0, 12px, 0) scale(0.58) rotate(var(--score-rotate));
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  54% {
+    opacity: 1;
+    filter: saturate(1.18) brightness(1.08);
+    transform: translate(-50%, -50%) translate3d(var(--score-mid-x), var(--score-mid-y), 0) scale(1.08) rotate(0deg);
+  }
+
+  86% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    filter: saturate(1) brightness(1);
+    transform: translate(-50%, -50%) translate3d(var(--score-end-x), var(--score-end-y), 0) scale(0.42) rotate(-8deg);
+  }
+}
+
 @keyframes saboteur-tutorial-in {
   from {
     opacity: 0;
@@ -547,7 +591,8 @@
   .sabotage-title::after,
   .sabotage-glow,
   .sabotage-scanlines,
-  .sabotage-cta {
+  .sabotage-cta,
+  .score-flight-chip {
     animation-duration: 0.001s;
     animation-iteration-count: 1;
   }
