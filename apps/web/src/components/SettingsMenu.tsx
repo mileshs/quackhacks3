@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { AudioVolumeControls } from "./AudioVolumeControls";
 import { useSettings } from "../lib/settings";
-import { useSound } from "../providers/SoundProvider";
 import { cx } from "../lib/ui";
+import { SettingsToggle } from "./SettingsToggle";
 
 // Per-screen accent for the gear button so the persistent Settings control recolors to
 // match each page's theme.
@@ -37,23 +38,15 @@ function GearIcon({ color }: { color: string }) {
 
 /**
  * The single, persistent Settings control. Rendered once in `App`, it floats top-right on
- * every screen, recolors per route, and opens a dropdown with master volume, navigation, a
- * Dev Mode toggle, and any dev controls the current page registered via `useDevSection`.
+ * every screen, recolors per route, and opens a dropdown with soundtrack/SFX volume,
+ * navigation, a Dev Mode toggle, and any dev controls the current page registered via `useDevSection`.
  */
 export function SettingsMenu() {
   const location = useLocation();
   const accent = accentForPath(location.pathname);
   const { devMode, setDevMode, devSections } = useSettings();
-  const { soundtrackVolume, soundEffectsVolume, setSoundtrackVolume, setSoundEffectsVolume } = useSound();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-
-  // One master volume that drives both the soundtrack and sound-effects buses.
-  const masterVolume = Math.max(soundtrackVolume, soundEffectsVolume);
-  function setMasterVolume(value: number) {
-    setSoundtrackVolume(value);
-    setSoundEffectsVolume(value);
-  }
 
   // Close on navigation (covers nav links and dev actions that route, e.g. "I Won").
   useEffect(() => {
@@ -100,22 +93,7 @@ export function SettingsMenu() {
 
       {open ? (
         <div className="flex max-h-[80vh] w-[min(320px,86vw)] flex-col gap-4 overflow-y-auto rounded-[18px] bg-[#fdf6e8] p-4 text-[#2b303b] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.9),0_12px_32px_rgba(0,0,0,0.35)]">
-          {/* Master volume */}
-          <section className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-extrabold tracking-[0.12em] text-[#a89a82] uppercase">Volume</span>
-              <span className="text-sm font-black tabular-nums">{masterVolume}</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={masterVolume}
-              onChange={(event) => setMasterVolume(Number(event.target.value))}
-              className="w-full accent-[#ffaf09]"
-              aria-label="Master volume"
-            />
-          </section>
+          <AudioVolumeControls variant="menu" />
 
           {/* Navigation */}
           <section className="flex flex-col gap-1.5">
@@ -138,27 +116,12 @@ export function SettingsMenu() {
             </div>
           </section>
 
-          {/* Dev mode toggle */}
-          <section className="flex items-center justify-between rounded-[12px] bg-white px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
-            <span className="text-sm font-extrabold">Dev Mode</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={devMode}
-              onClick={() => setDevMode(!devMode)}
-              className={cx(
-                "relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors",
-                devMode ? "bg-[#2fb86b]" : "bg-[#d8cdb5]"
-              )}
-            >
-              <span
-                className={cx(
-                  "absolute top-0.5 size-6 rounded-full bg-white shadow transition-transform",
-                  devMode ? "translate-x-[1.35rem]" : "translate-x-0.5"
-                )}
-              />
-            </button>
-          </section>
+          <SettingsToggle
+            id="settings-dev-mode"
+            label="Dev Mode"
+            checked={devMode}
+            onCheckedChange={setDevMode}
+          />
 
           {/* Page-specific dev controls */}
           {devMode ? (
