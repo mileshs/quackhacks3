@@ -39,16 +39,16 @@ export function ApiStatusPanel() {
       {health ? (
         <dl className="m-0 grid gap-3">
           <div>
-            <dt className={metricLabel}>D1 rows</dt>
+            <dt className={metricLabel}>SQLite rows</dt>
             <dd className={metricValue}>{health.database.leaderboardEntries}</dd>
           </div>
           <div>
-            <dt className={metricLabel}>WebSocket</dt>
-            <dd className={metricValue}>{health.realtime.websocket}</dd>
+            <dt className={metricLabel}>Hono WS</dt>
+            <dd className={metricValue}>{health.realtime.honoWebSocket}</dd>
           </div>
           <div>
-            <dt className={metricLabel}>Coordinator</dt>
-            <dd className={metricValue}>{health.realtime.coordinator}</dd>
+            <dt className={metricLabel}>Socket.IO</dt>
+            <dd className={metricValue}>{health.realtime.socketIo}</dd>
           </div>
         </dl>
       ) : (

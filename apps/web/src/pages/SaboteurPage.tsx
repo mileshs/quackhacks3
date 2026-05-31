@@ -1,21 +1,31 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   HOLE_PADDING,
+  applyRoundSnapshot,
   buildBlobFigure,
+  DEFAULT_POWERUP_DURATION_MS,
+  registerSaboteurMove,
+  SABOTEUR_POWERUP_DEFINITIONS,
   starterPoses,
   universalHumanSize,
   type FaceMode,
   type FigurePrimitive,
   type JointName,
+  type RoundSnapshotPayload,
+  type SaboteurPowerupProgress,
   type UniversalJoint,
   type UniversalPose
 } from "@quackhacks/shared";
+import { createSocketConnection } from "../lib/realtime";
 import { SaboteurSplash } from "../components/SaboteurSplash";
+import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
+import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
+import { SaboteurToolbar } from "../components/SaboteurToolbar";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
-import { cx, floorLine, humanPreview, largeStatus, pageGrid, primaryAction, secondaryAction, toolPanel } from "../lib/ui";
-import { useActiveGame } from "../lib/useActiveGame";
+import { cx, canvasPanel, saboteurJointHandleClass, saboteurStageBoundsRect, saboteurStageFloorLine, saboteurTorsoHandleIcon, saboteurViewport } from "../lib/ui";
 
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
+const JOINT_HANDLE_RADIUS = 10;
 
 const GROUND_Y = 0.94;
 const MIN_DRAG_RADIUS = 0.025;
@@ -33,11 +43,6 @@ const POSE_MAX_Y = GROUND_Y;
 const STAGE_WIDTH = 800;
 const STAGE_HEIGHT = 480;
 const STAGE_INSET = 28;
-const saboteurStageStyle: CSSProperties = {
-  width: "100%",
-  aspectRatio: `${STAGE_WIDTH} / ${STAGE_HEIGHT}`,
-  maxHeight: "82vh"
-};
 
 // Fit the bounding box into the stage with a uniform scale, then center it.
 const boundsWidthPx = (POSE_MAX_X - POSE_MIN_X) * universalHumanSize.width;
@@ -122,16 +127,22 @@ export function SaboteurPage() {
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
-  const [socketStatus, setSocketStatus] = useState("WebSocket connecting");
+  const [socketStatus, setSocketStatus] = useState("Socket.IO connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showHole, setShowHole] = useState(false);
-  const { connectionStatus, sendPose } = useActiveGame();
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
     }
     return window.localStorage.getItem(SPLASH_SEEN_STORAGE_KEY) !== "true";
   });
+  const [powerupProgress, setPowerupProgress] = useState<SaboteurPowerupProgress>({
+    inventory: [],
+    perfectStreak: 0,
+    movesSinceGrant: 0
+  });
+  const socketRef = useRef<ReturnType<typeof createSocketConnection> | null>(null);
+
   function dismissSplash() {
     setShowSplash(false);
     if (typeof window !== "undefined") {
@@ -147,32 +158,137 @@ export function SaboteurPage() {
   const pose = poseList[poseIndex] ?? poseList[0];
   const activePose = draftPose ?? pose;
   const selectedSavedPoseIndex = poseIndex - starterPoses.length;
-  const canDeleteSelectedPose = !draftPose && selectedSavedPoseIndex >= 0 && selectedSavedPoseIndex < savedPoses.length;
+  const canRenameSavedPose =
+    !draftPose && selectedSavedPoseIndex >= 0 && selectedSavedPoseIndex < savedPoses.length;
+  const [poseName, setPoseName] = useState(activePose.name);
+
+  const displayPose = useMemo(
+    () => ({
+      ...activePose,
+      name: poseName.trim() || activePose.name
+    }),
+    [activePose, poseName]
+  );
 
   useEffect(() => {
-    setSocketStatus(`WebSocket ${connectionStatus}`);
-  }, [connectionStatus]);
+    setPoseName(activePose.name);
+  }, [activePose.id, activePose.name, draftPose?.id, poseIndex]);
+
+  function updatePoseName(nextName: string) {
+    setPoseName(nextName);
+
+    if (draftPose) {
+      setDraftPose({ ...draftPose, name: nextName });
+      return;
+    }
+
+    if (canRenameSavedPose) {
+      setSavedPoses((currentPoses) =>
+        currentPoses.map((entry, index) =>
+          index === selectedSavedPoseIndex ? { ...entry, name: nextName } : entry
+        )
+      );
+    }
+  }
+
+  useEffect(() => {
+    const socket = createSocketConnection();
+    socketRef.current = socket;
+
+    socket.on("connect", () => setSocketStatus(`Socket.IO connected: ${socket.id}`));
+    socket.on("server:hello", () => setSocketStatus(`Socket.IO ready: ${socket.id}`));
+    socket.on("connect_error", () => setSocketStatus("Socket.IO unavailable"));
+    socket.on("round:snapshot", (payload: RoundSnapshotPayload) => {
+      setPowerupProgress((current) => applyRoundSnapshot(current, payload.band));
+      setSocketStatus(`Round: ${payload.band} (${payload.matchPercent}%)`);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  function activatePowerup(slotId: string) {
+    const slot = powerupProgress.inventory.find((entry) => entry.id === slotId);
+    if (!slot) {
+      return;
+    }
+
+    socketRef.current?.emit("powerup:activate", {
+      kind: slot.kind,
+      durationMs: DEFAULT_POWERUP_DURATION_MS
+    });
+
+    setPowerupProgress((current) => ({
+      ...current,
+      inventory: current.inventory.filter((entry) => entry.id !== slotId)
+    }));
+    setSocketStatus(`Deployed ${SABOTEUR_POWERUP_DEFINITIONS[slot.kind].name}`);
+  }
+
+  function simulatePerfectRound() {
+    setPowerupProgress((current) => applyRoundSnapshot(current, "PERFECT"));
+  }
+
+  function simulateMove() {
+    setPowerupProgress((current) => registerSaboteurMove(current));
+  }
 
   function randomizePose() {
+    setPowerupProgress((current) => registerSaboteurMove(current));
+    setSaveError(null);
+    setShowHole(false);
+
+    if (poseList.length <= 1) {
+      if (draftPose) {
+        setDraftPose(clonePose(poseList[0]!));
+      } else {
+        setPoseIndex(0);
+      }
+      return;
+    }
+
+    let nextIndex = poseIndex;
+    while (nextIndex === poseIndex) {
+      nextIndex = Math.floor(Math.random() * poseList.length);
+    }
+
+    const nextPose = poseList[nextIndex]!;
+
+    if (draftPose) {
+      setDraftPose(clonePose(nextPose));
+      setPoseName(nextPose.name);
+      return;
+    }
+
     setDraftPose(null);
-    setPoseIndex((currentIndex) => {
-      if (poseList.length <= 1) {
-        return 0;
-      }
-
-      let nextIndex = currentIndex;
-      while (nextIndex === currentIndex) {
-        nextIndex = Math.floor(Math.random() * poseList.length);
-      }
-
-      return nextIndex;
-    });
+    setPoseIndex(nextIndex);
   }
 
   function makePose() {
     setSaveError(null);
     setShowHole(false);
     setDraftPose(createStandingPose());
+  }
+
+  function editSelectedPose() {
+    setSaveError(null);
+    setShowHole(false);
+    setDraftPose(clonePose(pose));
+  }
+
+  function cancelDraft() {
+    setSaveError(null);
+    setShowHole(false);
+    setDraftPose(null);
+  }
+
+  function addPose() {
+    savePose();
+  }
+
+  function sendPose() {
+    broadcastPose(displayPose);
   }
 
   function savePose() {
@@ -190,7 +306,7 @@ export function SaboteurPage() {
     const savedPose = {
       ...normalizedDraftPose,
       id: `custom-pose-${Date.now()}`,
-      name: `Custom Pose ${savedPoses.length + 1}`,
+      name: normalizedDraftPose.name.trim() || poseName.trim() || `Custom Pose ${savedPoses.length + 1}`,
       joints: normalizedDraftPose.joints.map((joint) => ({ ...joint }))
     };
 
@@ -201,80 +317,76 @@ export function SaboteurPage() {
     setSocketStatus(`Saved ${savedPose.name}`);
   }
 
-  function deleteSelectedPose() {
-    if (!canDeleteSelectedPose) {
-      return;
-    }
-
-    setSavedPoses((currentPoses) => currentPoses.filter((_, index) => index !== selectedSavedPoseIndex));
-    setPoseIndex((currentIndex) => {
-      const nextPoseCount = Math.max(1, poseList.length - 1);
-      return Math.min(currentIndex, nextPoseCount - 1);
-    });
-    setSocketStatus(`Deleted ${pose.name}`);
+  function selectDeckPose(index: number) {
+    setSaveError(null);
+    setShowHole(false);
+    setDraftPose(null);
+    setPoseIndex(index);
   }
 
   function broadcastPose(selectedPose: UniversalPose) {
-    sendPose(selectedPose);
+    socketRef.current?.emit("pose:preview", selectedPose);
     setSocketStatus(`Sent ${selectedPose.name}`);
   }
 
+  const socketReady = /ready|connected/i.test(socketStatus);
+
   return (
-    <section className={cx(pageGrid, "w-[min(1600px,calc(100%-1rem))] py-4")}>
+    <section className="relative mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
       {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
-      <div className="flex items-center gap-4">
-        <h1 className="mt-0 mb-4 text-[clamp(2.4rem,6vw,4.5rem)] leading-[0.95]">Saboteur Screen</h1>
-        <button className={secondaryAction} type="button" onClick={() => setShowSplash(true)}>
-          Replay Intro
-        </button>
-      </div>
-      <div className="grid grid-cols-1 items-stretch gap-3 min-[861px]:grid-cols-[minmax(0,1fr)_minmax(230px,280px)]">
-        {showHole ? (
-          <SaboteurHolePreview pose={activePose} />
-        ) : draftPose ? (
-          <SaboteurPoseEditor pose={draftPose} onChange={setDraftPose} />
-        ) : (
-          <SaboteurPosePreview pose={pose} />
-        )}
-        <div className={toolPanel}>
-          <h2 className="m-0 text-lg font-bold">Pose Draft</h2>
-          <p className={largeStatus}>{activePose.name}</p>
-          <button className={primaryAction} type="button" onClick={makePose}>
-            Make Pose
-          </button>
-          {draftPose ? (
-            <button className={secondaryAction} type="button" onClick={savePose}>
-              Save Pose
-            </button>
-          ) : null}
-          {saveError ? (
-            <p className="my-1 font-semibold text-[#ff8585]" role="alert">
-              {saveError}
-            </p>
-          ) : null}
-          <button className={primaryAction} type="button" onClick={randomizePose}>
-            Randomize Pose
-          </button>
-          <button
-            className={secondaryAction}
-            type="button"
-            onClick={deleteSelectedPose}
-            disabled={!canDeleteSelectedPose}
-          >
-            Delete Pose
-          </button>
-          <button
-            className={secondaryAction}
-            type="button"
-            onClick={() => setShowHole((current) => !current)}
-          >
-            {showHole ? "Hide Hole" : "Preview Hole"}
-          </button>
-          <button className={secondaryAction} type="button" onClick={() => broadcastPose(activePose)}>
-            Send Temp Pose
-          </button>
-          <p className="m-0">{socketStatus}</p>
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
+        <div className="flex min-h-0 flex-col gap-3">
+          <div className={cx(canvasPanel, "relative flex min-h-[min(68vh,640px)] flex-col overflow-hidden border-white/8 bg-[#08080a]")}>
+            <div className="flex flex-1 items-center justify-center px-2 py-2">
+              {showHole ? (
+                <SaboteurHolePreview pose={displayPose} />
+              ) : draftPose ? (
+                <SaboteurPoseEditor pose={draftPose} onChange={setDraftPose} />
+              ) : (
+                <SaboteurPosePreview pose={displayPose} />
+              )}
+            </div>
+          </div>
+
+          <SaboteurToolbar
+            draftActive={Boolean(draftPose)}
+            showHole={showHole}
+            saveError={saveError}
+            onMakePose={makePose}
+            onEditPose={editSelectedPose}
+            onCancelDraft={cancelDraft}
+            onToggleHole={() => setShowHole((current) => !current)}
+            onSavePose={addPose}
+            onSendPose={sendPose}
+          />
+
+          <footer className="px-1 pb-1">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-[#8a8274]">
+              <span className="inline-flex items-center gap-1.5">
+                <span className={cx("inline-block h-2 w-2 rounded-full", socketReady ? "bg-[#ef5c6b]" : "bg-[#8a8274]")} />
+                {socketReady ? "Connected & ready" : "Connecting…"}
+              </span>
+              <span className="hidden sm:inline">{socketStatus}</span>
+            </div>
+          </footer>
         </div>
+
+        <aside className="flex flex-col gap-3">
+          <SaboteurDeckPanel
+            poses={poseList}
+            selectedIndex={poseIndex}
+            onSelect={selectDeckPose}
+            onRandomize={randomizePose}
+          />
+          <SaboteurPowerupPanel
+            inventory={powerupProgress.inventory}
+            perfectStreak={powerupProgress.perfectStreak}
+            movesSinceGrant={powerupProgress.movesSinceGrant}
+            onActivate={activatePowerup}
+            onSimulatePerfect={simulatePerfectRound}
+            onSimulateMove={simulateMove}
+          />
+        </aside>
       </div>
     </section>
   );
@@ -353,18 +465,14 @@ function StageBounds() {
         width={stageBounds.width}
         height={stageBounds.height}
         rx={16}
-        fill="none"
-        stroke="rgba(255, 210, 74, 0.35)"
-        strokeWidth={2.5}
-        strokeDasharray="12 9"
+        className={saboteurStageBoundsRect}
       />
       <line
         x1={stageBounds.x}
         y1={stageFloorY}
         x2={stageBounds.x + stageBounds.width}
         y2={stageFloorY}
-        className={floorLine}
-        strokeLinecap="round"
+        className={saboteurStageFloorLine}
       />
     </g>
   );
@@ -388,11 +496,10 @@ function SaboteurPosePreview({ pose }: { pose: UniversalPose }) {
 
   return (
     <svg
-      className={humanPreview}
+      className={saboteurViewport}
       viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
       role="img"
       aria-label={pose.name}
-      style={saboteurStageStyle}
     >
       <g transform={dummyTransform}>
         <StageBounds />
@@ -436,11 +543,10 @@ function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
 
   return (
     <svg
-      className={humanPreview}
+      className={saboteurViewport}
       viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
       role="img"
       aria-label={`Hole preview for ${pose.name}`}
-      style={saboteurStageStyle}
     >
       <defs>
         <mask id={maskId} maskUnits="userSpaceOnUse">
@@ -541,29 +647,21 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
   return (
     <svg
       ref={svgRef}
-      className={humanPreview}
+      className={cx(saboteurViewport, activeJoint ? "cursor-grabbing" : "cursor-default", "touch-none")}
       viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
       role="img"
       aria-label="Editable saboteur pose"
       onPointerMove={moveActiveJoint}
       onPointerUp={stopPointerAction}
       onPointerCancel={stopPointerAction}
-      style={{
-        cursor: activeJoint ? "grabbing" : "default",
-        touchAction: "none",
-        ...saboteurStageStyle
-      }}
     >
       <g transform={dummyTransform}>
         <StageBounds />
         <BlobFigure jointMap={jointMap} faceMode={isWriggling ? "squeeze" : "happy"} />
-        <circle
+        <TorsoMoveHandle
           cx={torsoCenter.x * universalHumanSize.width}
           cy={torsoCenter.y * universalHumanSize.height}
-          r="20"
-          fill="#ffd24a"
-          stroke="#e0a400"
-          strokeWidth={3}
+          isWriggling={isWriggling}
           onPointerDown={(event) => {
             event.stopPropagation();
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -573,25 +671,20 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
             bodyDragRef.current = point ? { lastX: point.x, lastY: point.y } : null;
             setIsWriggling(true);
           }}
-          style={{ cursor: isWriggling ? "grabbing" : "grab" }}
         />
         {pose.joints.map((joint) => (
           <circle
             key={joint.name}
             cx={joint.x * universalHumanSize.width}
             cy={joint.y * universalHumanSize.height}
-            r={getHandleRadius(joint.name)}
+            r={JOINT_HANDLE_RADIUS}
             onPointerDown={(event) => {
               event.stopPropagation();
               event.currentTarget.setPointerCapture(event.pointerId);
               setIsWriggling(false);
               setActiveJoint(joint.name);
             }}
-            style={{
-              fill: activeJoint === joint.name ? "rgba(15, 32, 80, 0.55)" : "rgba(15, 32, 80, 0.3)",
-              stroke: "none",
-              cursor: activeJoint === joint.name ? "grabbing" : "grab"
-            }}
+            className={saboteurJointHandleClass(activeJoint === joint.name)}
           />
         ))}
         {(() => {
@@ -599,20 +692,58 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
           if (!hips) {
             return null;
           }
-          const radius = getJointRadius("hips") * 0.5;
           const offsetX = 0.06 * universalHumanSize.width;
-          const cy = hips.y * universalHumanSize.height;
-          const cx = hips.x * universalHumanSize.width;
+          const hipCenterY = hips.y * universalHumanSize.height;
+          const hipCenterX = hips.x * universalHumanSize.width;
+          const hipMarkerClass = cx(saboteurJointHandleClass(false), "pointer-events-none");
           return (
             <>
-              <circle cx={cx - offsetX} cy={cy} r={radius} style={{ fill: "rgba(15, 32, 80, 0.3)", stroke: "none" }} />
-              <circle cx={cx + offsetX} cy={cy} r={radius} style={{ fill: "rgba(15, 32, 80, 0.3)", stroke: "none" }} />
+              <circle cx={hipCenterX - offsetX} cy={hipCenterY} r={JOINT_HANDLE_RADIUS} className={hipMarkerClass} />
+              <circle cx={hipCenterX + offsetX} cy={hipCenterY} r={JOINT_HANDLE_RADIUS} className={hipMarkerClass} />
             </>
           );
         })()}
       </g>
     </svg>
   );
+}
+
+function TorsoMoveHandle({
+  cx,
+  cy,
+  isWriggling,
+  onPointerDown
+}: {
+  cx: number;
+  cy: number;
+  isWriggling: boolean;
+  onPointerDown: (event: PointerEvent<SVGGElement>) => void;
+}) {
+  return (
+    <g
+      transform={`translate(${cx}, ${cy})`}
+      onPointerDown={onPointerDown}
+      className={isWriggling ? "cursor-grabbing" : "cursor-grab"}
+      aria-label="Move entire pose"
+    >
+      <circle r={16} className="fill-transparent" />
+      <g className={saboteurTorsoHandleIcon}>
+        <path d="M 0 -14 V 14" />
+        <path d="M 0 -14 L -6 -6 M 0 -14 L 6 -6" />
+        <path d="M 0 14 L -6 6 M 0 14 L 6 6" />
+        <path d="M -14 0 H 14" />
+        <path d="M -14 0 L -6 -6 M -14 0 L -6 6" />
+        <path d="M 14 0 L 6 -6 M 14 0 L 6 6" />
+      </g>
+    </g>
+  );
+}
+
+function clonePose(pose: UniversalPose): UniversalPose {
+  return {
+    ...pose,
+    joints: pose.joints.map((joint) => ({ ...joint }))
+  };
 }
 
 function createStandingPose(): UniversalPose {
@@ -636,42 +767,6 @@ function createStandingPose(): UniversalPose {
       { name: "rightAnkle", x: 0.6, y: GROUND_Y, importance: 1 }
     ]
   };
-}
-
-// Arms and legs get noticeably larger grab handles so they're easy to drag.
-const LARGE_HANDLE_JOINTS = new Set<JointName>([
-  "leftElbow",
-  "rightElbow",
-  "leftWrist",
-  "rightWrist",
-  "leftKnee",
-  "rightKnee",
-  "leftAnkle",
-  "rightAnkle"
-]);
-
-function getHandleRadius(jointName: JointName) {
-  if (LARGE_HANDLE_JOINTS.has(jointName)) {
-    return 15;
-  }
-
-  return getJointRadius(jointName) * 0.6;
-}
-
-function getJointRadius(jointName: JointName) {
-  if (jointName === "head") {
-    return 16;
-  }
-
-  if (jointName === "hips" || jointName === "neck") {
-    return 12;
-  }
-
-  if (jointName.includes("Shoulder") || jointName.includes("Knee")) {
-    return 5;
-  }
-
-  return 5;
 }
 
 function rotateJointTowardPoint(pose: UniversalPose, jointName: JointName, x: number, y: number) {

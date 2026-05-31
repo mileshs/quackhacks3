@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { validator } from "hono/validator";
 import {
   createLeaderboardEntrySchema,
@@ -9,9 +10,11 @@ import {
 import {
   countLeaderboardEntries,
   createLeaderboardEntry,
-  getDatabaseBindingName,
+  getDatabasePath,
   listLeaderboardEntries
 } from "./db/leaderboard.js";
+
+const clientOrigin = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
 
 export const api = new Hono()
   .get("/health", async (c) => {
@@ -21,12 +24,12 @@ export const api = new Hono()
       ok: true,
       service: "quackhacks-api",
       database: {
-        binding: getDatabaseBindingName(),
+        path: getDatabasePath(),
         leaderboardEntries: entries
       },
       realtime: {
-        websocket: "/ws",
-        coordinator: "GlobalGame"
+        honoWebSocket: "/ws",
+        socketIo: "/socket.io"
       }
     });
   })
@@ -67,6 +70,13 @@ export const api = new Hono()
   });
 
 export const app = new Hono()
+  .use(
+    "/api/*",
+    cors({
+      origin: clientOrigin,
+      credentials: true
+    })
+  )
   .get("/", (c) => c.text("QuackHacks API scaffold. Try /api/health."))
   .route("/api", api);
 

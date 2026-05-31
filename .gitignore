@@ -2,7 +2,6 @@ node_modules/
 dist/
 .turbo/
 .vite/
-.wrangler/
 coverage/
 .pnpm-store/
 *.tsbuildinfo
