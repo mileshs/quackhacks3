@@ -8,3 +8,17 @@ export const leaderboardEntries = sqliteTable("leaderboard_entries", {
   survivalSeconds: integer("survival_seconds").notNull(),
   createdAt: text("created_at").notNull()
 });
+
+export const gameCaptures = sqliteTable("game_captures", {
+  sessionKey: text("session_key").primaryKey(),
+  snapshotImage: text("snapshot_image").notNull(),
+  screenshotImage: text("screenshot_image").notNull(),
+  matchPercent: real("match_percent"),
+  createdAt: text("created_at").notNull()
+});
+
+export const gameCaptureGalleries = sqliteTable("game_capture_galleries", {
+  sessionKey: text("session_key").primaryKey(),
+  framesJson: text("frames_json").notNull(),
+  updatedAt: text("updated_at").notNull()
+});

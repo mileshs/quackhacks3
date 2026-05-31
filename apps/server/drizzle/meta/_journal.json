@@ -8,6 +8,20 @@
       "when": 1780195816019,
       "tag": "0000_same_invaders",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1780195816020,
+      "tag": "0001_game_captures",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780195816021,
+      "tag": "0002_game_capture_galleries",
+      "breakpoints": true
     }
   ]
 }

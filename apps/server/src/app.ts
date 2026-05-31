@@ -1,11 +1,15 @@
 import { Hono } from "hono";
 import { validator } from "hono/validator";
 import {
+  appendGameCaptureFrameSchema,
+  createGameCaptureSchema,
   createLeaderboardEntrySchema,
   scoreBandFromMatch,
   scoreFromMatch,
   starterPoses
 } from "@quackhacks/shared";
+import { appendGalleryFrame, getCaptureGallery } from "./db/game-capture-galleries.js";
+import { getGameCapture, upsertGameCapture } from "./db/game-captures.js";
 import {
   countLeaderboardEntries,
   createLeaderboardEntry,
@@ -64,6 +68,75 @@ export const api = new Hono()
       points: scoreFromMatch(match),
       band: scoreBandFromMatch(match)
     });
+  })
+  .post(
+    "/game-captures",
+    validator("json", (value, c) => {
+      const parsed = createGameCaptureSchema.safeParse(value);
+
+      if (!parsed.success) {
+        return c.json(
+          {
+            error: "Invalid game capture",
+            issues: parsed.error.flatten()
+          },
+          400
+        );
+      }
+
+      return parsed.data;
+    }),
+    async (c) => {
+      const capture = await upsertGameCapture(c.req.valid("json"));
+      return c.json({ capture }, 201);
+    }
+  )
+  .get("/game-captures/:sessionKey", async (c) => {
+    const sessionKey = c.req.param("sessionKey");
+    const gallery = await getCaptureGallery(sessionKey);
+
+    if (gallery) {
+      return c.json({ gallery });
+    }
+
+    const capture = await getGameCapture(sessionKey);
+
+    if (!capture) {
+      return c.json({ error: "Capture not found" }, 404);
+    }
+
+    return c.json({ capture });
+  })
+  .post(
+    "/game-captures/:sessionKey/frames",
+    validator("json", (value, c) => {
+      const parsed = appendGameCaptureFrameSchema.safeParse(value);
+
+      if (!parsed.success) {
+        return c.json(
+          {
+            error: "Invalid capture frame",
+            issues: parsed.error.flatten()
+          },
+          400
+        );
+      }
+
+      return parsed.data;
+    }),
+    async (c) => {
+      const gallery = await appendGalleryFrame(c.req.param("sessionKey"), c.req.valid("json"));
+      return c.json({ gallery }, 201);
+    }
+  )
+  .get("/game-captures/:sessionKey/gallery", async (c) => {
+    const gallery = await getCaptureGallery(c.req.param("sessionKey"));
+
+    if (!gallery) {
+      return c.json({ error: "Gallery not found" }, 404);
+    }
+
+    return c.json({ gallery });
   });
 
 export const app = new Hono()

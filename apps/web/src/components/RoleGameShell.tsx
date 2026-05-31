@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { GameRole } from "@quackhacks/shared";
 import { useNavigate } from "react-router-dom";
 import { DefeatSequenceProvider } from "../lib/defeatSequence";
+import { buildScorePath } from "../lib/gameCapture";
 import { queueGameNotice } from "../lib/gameNotifications";
 import { useDevSection } from "../lib/settings";
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
@@ -62,6 +63,12 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
     setRoleReady
   } = controls;
   const isDev = import.meta.env.DEV;
+  const goToScore = useCallback(
+    (winner: "dummy" | "saboteur") => {
+      navigate(buildScorePath(winner, game?.gameId));
+    },
+    [game?.gameId, navigate]
+  );
   const otherRole = role === GameRole.Dummy ? GameRole.Saboteur : GameRole.Dummy;
   const roleLabel = roleLabels[role];
   const otherRoleLabel = roleLabels[otherRole];
@@ -95,9 +102,9 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
       playGameOverOnce();
       setDevSolo(false);
       setDevSoloStartedAt(null);
-      navigate("/score?winner=dummy");
+      goToScore("dummy");
     }
-  }, [completeGame, devSolo, hasActiveGame, navigate, playGameOverOnce]);
+  }, [completeGame, devSolo, goToScore, hasActiveGame, playGameOverOnce]);
 
   // Soundtrack audio only on the dummy/poser screen (avoids double playback with saboteur open).
   useSoundtrackGameSync({
@@ -165,12 +172,12 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
 
     if (game.endReason === "soundtrack-complete") {
       queueGameNotice("The dummy survived the track!");
-      navigate("/score?winner=dummy");
+      goToScore("dummy");
       return;
     }
 
     if (game.endReason === "lives-depleted") {
-      navigate("/score?winner=saboteur");
+      goToScore("saboteur");
       return;
     }
 
@@ -181,7 +188,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
     }
 
     navigate("/");
-  }, [game, navigate]);
+  }, [game, goToScore, navigate]);
 
   useEffect(() => {
     if (roleError && !isDev) {
@@ -247,7 +254,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
           type="button"
           onClick={() => {
             playGameOverOnce();
-            navigate(`/score?winner=${role}`);
+            goToScore(role);
           }}
         >
           I Won
@@ -260,7 +267,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
         </button>
       </div>
     ),
-    [navigate, playGameOverOnce, role, startDevSolo]
+    [goToScore, playGameOverOnce, role, startDevSolo]
   );
   useDevSection("game", gameDevSection);
 

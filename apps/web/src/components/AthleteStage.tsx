@@ -28,9 +28,11 @@ import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dumm
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
 import { useDefeatSequence } from "../lib/defeatSequence";
 import { useSound } from "../providers/SoundProvider";
+import { showGameNotice } from "../lib/gameNotifications";
 import { useDevSection, useEffectiveDevGameplay, useSettings } from "../lib/settings";
 import { isHoleVisiblePhase, useGameTempo } from "../lib/tempo";
 import { cx } from "../lib/ui";
+import { buildGameCaptureImages, buildRoundCaptureImages, type GameCaptureImages } from "../lib/gameCapture";
 import { SettingsToggle } from "./SettingsToggle";
 
 // ── "Poses for Dummies" HUD palette ──────────────────────────────────────────
@@ -107,6 +109,12 @@ type AthleteStageProps = {
   playingSessionKey?: string | null;
   /** Called once after the death sound ends when all lives are lost. */
   onAllLivesLost?: () => void;
+  /** Poses to pick from when generating capture images. */
+  capturePosePool?: UniversalPose[];
+  /** Fired after every scored wall with webcam + in-game wall images. */
+  onRoundCapture?: (capture: GameCaptureImages) => void;
+  /** Dev / test hook after capture is rendered. */
+  onCaptureShot?: (capture: GameCaptureImages) => void;
 };
 
 const STARTING_LIVES = 3;
@@ -593,7 +601,10 @@ export function AthleteStage({
   powerupActivation,
   onFinishWall,
   playingSessionKey,
-  onAllLivesLost
+  onAllLivesLost,
+  capturePosePool,
+  onCaptureShot,
+  onRoundCapture
 }: AthleteStageProps) {
   const tempo = useGameTempo();
   const { beginDefeatSequence } = useDefeatSequence();
@@ -642,6 +653,10 @@ export function AthleteStage({
   const lastLifeLossCycleRef = useRef<number | null>(null);
   const onAllLivesLostRef = useRef(onAllLivesLost);
   onAllLivesLostRef.current = onAllLivesLost;
+  const onCaptureShotRef = useRef(onCaptureShot);
+  onCaptureShotRef.current = onCaptureShot;
+  const onRoundCaptureRef = useRef(onRoundCapture);
+  onRoundCaptureRef.current = onRoundCapture;
   const [showDummy, setShowDummy] = useState(true);
   const [showDebugDashboard, setShowDebugDashboard] = useState(false);
   const [guidance, setGuidance] = useState<string | null>(null);
@@ -797,6 +812,14 @@ export function AthleteStage({
     return visibleHoleRef.current ?? targetRef.current;
   }, []);
 
+  const buildCapture = useCallback(() => {
+    return buildRoundCaptureImages(
+      videoRef.current,
+      getScoringHoleTarget(),
+      matchPercentRef.current
+    );
+  }, [getScoringHoleTarget]);
+
   const getSnapshotMatchPercent = useCallback(() => {
     const pose = dummyRenderRef.current?.pose;
     if (pose) {
@@ -820,6 +843,11 @@ export function AthleteStage({
       band: judgedBand,
       sentAt: new Date().toISOString()
     });
+
+    const roundCapture = buildCapture();
+    if (roundCapture) {
+      onRoundCaptureRef.current?.(roundCapture);
+    }
 
     if (defeatedRef.current) {
       return;
@@ -859,6 +887,7 @@ export function AthleteStage({
   }, [
     awardCurrentScore,
     beginDefeatSequence,
+    buildCapture,
     getSnapshotMatchPercent,
     onFinishWall,
     playSoundEffect,
@@ -1138,6 +1167,17 @@ export function AthleteStage({
     console.info("pose alignment debug", debugInfoRef.current);
   }, []);
 
+  const handleCaptureShot = useCallback(() => {
+    const pool = capturePosePool ?? poseOptions ?? [targetRef.current];
+    const capture = buildGameCaptureImages(videoRef.current, pool, matchPercentRef.current);
+    if (capture) {
+      onCaptureShotRef.current?.(capture);
+      return;
+    }
+
+    showGameNotice("Start the camera before taking a capture shot.");
+  }, [capturePosePool, poseOptions]);
+
   // Athlete dev controls live in the global Settings menu (under Dev Mode).
   const athleteDevSection = useMemo(
     () => (
@@ -1183,6 +1223,9 @@ export function AthleteStage({
           <button className={pillSecondary} type="button" onClick={handleLogDebugSnapshot}>
             Log Debug Snapshot
           </button>
+          <button className={pillSecondary} type="button" onClick={handleCaptureShot}>
+            Capture shot
+          </button>
         </div>
       </div>
     ),
@@ -1197,6 +1240,7 @@ export function AthleteStage({
       handleStart,
       handleFinishWall,
       handleLogDebugSnapshot,
+      handleCaptureShot,
       showDebugDashboard,
       stop
     ]
