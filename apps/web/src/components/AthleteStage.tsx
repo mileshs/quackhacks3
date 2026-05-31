@@ -143,15 +143,20 @@ function anchorDummyToPlayer(
   height: number
 ): UniversalPose {
   const region = holeRegion(width, height);
+  if (!(region.w > 0)) {
+    return pose; // canvas not sized yet — don't risk a divide-by-zero shift
+  }
   const hips = pose.joints.find((joint) => joint.name === "hips");
   // Player's mirrored hip position expressed in the hole's box-x units (0 = hole's left
   // edge, 1 = right edge), the same 0..1 space the target pose lives in.
   const playerBoxX = ((1 - hipFrameX) * width - region.x0) / region.w;
-  const dx = hips ? playerBoxX - hips.x : 0;
+  const rawDx = hips ? playerBoxX - hips.x : 0;
+  const dx = Number.isFinite(rawDx) ? rawDx : 0;
 
   const dummyFloor = lowestAnkleY(pose);
   const targetFloor = lowestAnkleY(target);
-  const dy = dummyFloor !== null && targetFloor !== null ? targetFloor - dummyFloor : 0;
+  const rawDy = dummyFloor !== null && targetFloor !== null ? targetFloor - dummyFloor : 0;
+  const dy = Number.isFinite(rawDy) ? rawDy : 0;
 
   if (dx === 0 && dy === 0) {
     return pose;
@@ -380,7 +385,12 @@ export function AthleteStage({
           if (!data || !showDummyRef.current) {
             return;
           }
-          drawDummy3D(p, data.pose, data.handClosed, p.width, p.height);
+          // A bad draw frame must never permanently freeze the 3D dummy; recover next frame.
+          try {
+            drawDummy3D(p, data.pose, data.handClosed, p.width, p.height);
+          } catch (err) {
+            console.error("dummy draw error (continuing)", err);
+          }
         };
       }, dummyMountRef.current);
     });

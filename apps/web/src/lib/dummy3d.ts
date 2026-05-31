@@ -20,9 +20,14 @@ export type HandClosed = { left: boolean; right: boolean };
 /** A closed/grabbing hand turns red so the grab reads at a glance. */
 export const HAND_GRAB_COLOR = "#ff2424";
 
+/** A finite, drawable point — guards WebGL against NaN/Infinity coords that freeze it. */
+function okPoint(point: ScreenPoint | null): point is ScreenPoint {
+  return !!point && Number.isFinite(point.x) && Number.isFinite(point.y);
+}
+
 /** A 3D sphere centered at a screen point (z = 0 plane). */
 export function sphere3D(p: p5, point: ScreenPoint | null, r: number) {
-  if (!point || r <= 0) {
+  if (!okPoint(point) || !(r > 0)) {
     return;
   }
   p.push();
@@ -33,7 +38,7 @@ export function sphere3D(p: p5, point: ScreenPoint | null, r: number) {
 
 /** A 3D capsule: a cylinder between two screen points, capped with spheres for a pill look. */
 export function capsule3D(p: p5, a: ScreenPoint | null, b: ScreenPoint | null, r: number) {
-  if (!a || !b || r <= 0) {
+  if (!okPoint(a) || !okPoint(b) || !(r > 0)) {
     return;
   }
   const dx = b.x - a.x;
@@ -53,7 +58,7 @@ export function capsule3D(p: p5, a: ScreenPoint | null, b: ScreenPoint | null, r
 
 /** A foot as a flattened 3D ellipsoid sitting just below the ankle. */
 export function foot3D(p: p5, ankle: ScreenPoint | null, rx: number, ry: number) {
-  if (!ankle) {
+  if (!okPoint(ankle) || !(rx > 0) || !(ry > 0)) {
     return;
   }
   p.push();
@@ -172,6 +177,12 @@ export type DummyScene3DParams = {
 export function drawDummyScene3D(p: p5, params: DummyScene3DParams) {
   const { at, s, width, height, handClosed, faceMode = "happy" } = params;
 
+  // Bail on a degenerate scale/canvas so we never feed NaN geometry to WebGL (which can
+  // freeze the canvas on the last frame). The next frame redraws cleanly.
+  if (!(s > 0) || !Number.isFinite(width) || !Number.isFinite(height)) {
+    return;
+  }
+
   const head = at("head");
   const neck = at("neck");
   const leftShoulder = at("leftShoulder");
@@ -220,7 +231,7 @@ export function drawDummyScene3D(p: p5, params: DummyScene3DParams) {
   // Neck link + head.
   capsule3D(p, head, neck, 14 * s);
   const headCenter = head ?? neck;
-  if (headCenter) {
+  if (okPoint(headCenter)) {
     p.push();
     p.translate(headCenter.x, headCenter.y, 0);
     p.ellipsoid(50 * s, 58 * s, 50 * s);
@@ -239,7 +250,7 @@ export function drawDummyScene3D(p: p5, params: DummyScene3DParams) {
   }
 
   // Face on the front of the head (matches the saboteur's 2D expressions).
-  if (headCenter) {
+  if (okPoint(headCenter)) {
     drawFace3D(p, headCenter, s, faceMode);
   }
 
