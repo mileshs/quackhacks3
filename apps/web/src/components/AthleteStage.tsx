@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type p5 from "p5";
 import {
   BLOB_COLOR,
+  FACE_COLOR,
   HOLE_PADDING,
   buildBlobFigure,
   comparePoses,
@@ -30,19 +31,27 @@ const BAND_COLOR: Record<ScoreBand, string> = {
   CRASH: "#ef5c6b"
 };
 
-// Soft cream card, used for the score / match panels.
-const hudCard = "rounded-[18px] bg-[#fdf6e8] shadow-[0_10px_22px_rgba(80,55,0,0.18)]";
+// Soft cream card with a layered shadow + inset top highlight so it pops off the page.
+const hudCard =
+  "rounded-[18px] bg-[#fdf6e8] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.9),0_2px_3px_rgba(0,0,0,0.12),0_12px_24px_rgba(80,55,0,0.3)]";
 const hudLabel = "block text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#a89a82]";
 
-// Cream pill button (logo-dark text), and a yellow "primary" variant.
+// Cream pill button (logo-dark text), and a yellow "primary" variant. Both get a raised,
+// 3D look via an inset top highlight, a tight contact shadow, and a soft cast shadow.
 const pillBase =
   "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[16px] px-4 py-3 font-extrabold text-[#2b303b] no-underline transition-transform active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50";
-const pillSecondary = cx(pillBase, "bg-[#fdf6e8] shadow-[0_6px_14px_rgba(70,50,0,0.16)] hover:bg-white");
-const pillPrimary = cx(pillBase, "bg-[#ffc83d] shadow-[0_6px_14px_rgba(180,120,0,0.3)] hover:brightness-[1.04]");
+const pillSecondary = cx(
+  pillBase,
+  "bg-[#fdf6e8] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.95),0_2px_3px_rgba(0,0,0,0.14),0_9px_18px_rgba(70,50,0,0.3)] hover:bg-white"
+);
+const pillPrimary = cx(
+  pillBase,
+  "bg-[#ffc83d] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.6),0_2px_3px_rgba(0,0,0,0.16),0_9px_18px_rgba(180,120,0,0.45)] hover:brightness-[1.04]"
+);
 
 function StarIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="size-6 shrink-0" fill="#ffc83d" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="size-6 shrink-0 drop-shadow-[0_2px_3px_rgba(120,80,0,0.5)]" fill="#ffc83d" aria-hidden="true">
       <path d="M12 2.5l2.9 5.9 6.5.95-4.7 4.58 1.1 6.47L12 17.4l-5.8 3.05 1.1-6.47L2.6 9.35l6.5-.95L12 2.5z" />
     </svg>
   );
@@ -56,13 +65,16 @@ function HeartIcon({ filled }: { filled: boolean }) {
         transform="translate(-1.85 0)"
         fill={filled ? "#ff5564" : "#e7d9bc"}
       />
+      {filled && (
+        <ellipse cx="8" cy="8.6" rx="2.4" ry="1.6" fill="rgba(255,255,255,0.6)" transform="rotate(-32 8 8.6)" />
+      )}
     </svg>
   );
 }
 
 function HamburgerIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="size-5 shrink-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
       <path d="M4 6h16M4 12h16M4 18h16" />
     </svg>
   );
@@ -70,7 +82,7 @@ function HamburgerIcon() {
 
 function FullscreenIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="size-6 shrink-0" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="size-6 shrink-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" />
     </svg>
   );
@@ -150,9 +162,6 @@ function frameGuidance(landmarks: PoseFrame["landmarks"]): string | null {
   return null;
 }
 
-// Everything OUTSIDE the hole is a solid bright-yellow wall; the hole itself is
-// punched clear so the live camera shows through it.
-const WALL_COLOR = "#ffd60a";
 // Backdrop behind the wall (the hole reads as black, matching the running view).
 const IDLE_BACKDROP = "#000000";
 
@@ -509,7 +518,7 @@ export function AthleteStage({
         <img
           src="/poses-for-dummies-logo-ai.png"
           alt="Poses for Dummies"
-          className="w-[200px] drop-shadow-[0_4px_10px_rgba(80,55,0,0.25)] select-none"
+          className="w-[200px] select-none filter-[drop-shadow(0_2px_1px_rgba(0,0,0,0.22))_drop-shadow(0_9px_14px_rgba(80,55,0,0.45))]"
           draggable={false}
         />
         <div className={cx(hudCard, "px-4 py-2.5")}>
@@ -569,7 +578,7 @@ export function AthleteStage({
       {/* Fullscreen toggle, bottom-right circular button. */}
       <button
         type="button"
-        className="absolute right-6 bottom-6 z-43 grid size-14 cursor-pointer place-items-center rounded-full bg-[#fdf6e8] shadow-[0_8px_18px_rgba(70,50,0,0.22)] transition-transform active:translate-y-px"
+        className="absolute right-6 bottom-6 z-43 grid size-14 cursor-pointer place-items-center rounded-full bg-[#fdf6e8] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.95),0_2px_3px_rgba(0,0,0,0.16),0_10px_20px_rgba(70,50,0,0.32)] transition-transform active:translate-y-px"
         aria-label="Toggle fullscreen"
         onClick={() => toggleFullscreen(canvasRef.current?.parentElement ?? null)}
       >
@@ -829,8 +838,9 @@ function drawDummy3D(
   // WEBGL origin is the canvas center; shift so we can use top-left screen coordinates.
   p.translate(-width / 2, -height / 2, 0);
   p.noStroke();
-  p.ambientLight(80);
-  p.directionalLight(235, 240, 255, 0.45, 0.6, -0.75);
+  // Strong ambient + soft directional so the dummy reads as 3D without harsh shadows.
+  p.ambientLight(170);
+  p.directionalLight(105, 115, 135, 0.4, 0.55, -0.7);
   p.fill(BLOB_COLOR);
 
   // Legs + feet.
@@ -874,6 +884,51 @@ function drawDummy3D(
     sphere3D(p, rightWrist, 17 * s);
   }
 
+  // Saboteur-style "happy" face on the front of the head.
+  if (headCenter) {
+    drawFace3D(p, headCenter, s);
+  }
+
+  p.pop();
+}
+
+/**
+ * Draw the same "happy" face the saboteur uses (two eyes, an L-nose, a smile), flattened
+ * onto the front of the 3D head. Offsets mirror `buildFace` in the shared figure module.
+ */
+function drawFace3D(p: p5, headCenter: ScreenPoint, s: number) {
+  p.push();
+  // Sit just in front of the head's front pole (rz = 50) so features aren't occluded.
+  p.translate(headCenter.x, headCenter.y, 50.5 * s);
+
+  // Eyes (filled, crisp dark).
+  p.noStroke();
+  p.fill(FACE_COLOR);
+  p.ellipse(-16 * s, 2 * s, 12 * s, 18 * s);
+  p.ellipse(16 * s, 2 * s, 12 * s, 18 * s);
+
+  // Nose: an L-shaped stroke.
+  p.noFill();
+  p.stroke(FACE_COLOR);
+  p.strokeWeight(2.6 * s);
+  p.beginShape();
+  p.vertex(0, 10 * s);
+  p.vertex(0, 19 * s);
+  p.vertex(7 * s, 19 * s);
+  p.endShape();
+
+  // Smile: sample a quadratic curve from (-13,30) via control (0,42) to (13,30).
+  p.strokeWeight(3 * s);
+  p.beginShape();
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    const mt = 1 - t;
+    const px = (mt * mt * -13 + t * t * 13) * s;
+    const py = (mt * mt * 30 + 2 * mt * t * 42 + t * t * 30) * s;
+    p.vertex(px, py);
+  }
+  p.endShape();
+
   p.pop();
 }
 
@@ -909,17 +964,39 @@ function drawHoleOverlay(
   // touches the main camera canvas is a plain source-over composite.
   const wallCtx = getWallCtx(width, height);
 
-  // 1) Paint the full solid wall.
-  wallCtx.fillStyle = WALL_COLOR;
+  // 1) Paint the wall with a soft vertical gradient so it reads as a lit 3D surface.
+  const wallGrad = wallCtx.createLinearGradient(0, 0, 0, height);
+  wallGrad.addColorStop(0, "#ffe24f");
+  wallGrad.addColorStop(1, "#eaad00");
+  wallCtx.fillStyle = wallGrad;
   wallCtx.fillRect(0, 0, width, height);
 
-  // 2) Carve the figure silhouette clear (transparent = the hole).
+  // 2) Soft recessed rim: paint a blurred dark silhouette slightly larger than the hole.
+  //    Carving the real hole next leaves a soft inner shadow around the edge, so the
+  //    cutout reads as having depth (slightly 3D).
+  const rim = buildBlobFigure(target.joints, { color: "#3a2700", pad: HOLE_PADDING + 3 });
+  wallCtx.save();
+  wallCtx.shadowColor = "rgba(50, 33, 0, 0.7)";
+  wallCtx.shadowBlur = 26;
+  withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, rim));
+  wallCtx.restore();
+
+  // 3) Carve the figure silhouette clear (transparent = the hole).
   wallCtx.save();
   wallCtx.globalCompositeOperation = "destination-out";
   withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, silhouette));
   wallCtx.restore();
 
-  // 3) Composite the holed wall over the camera: camera shows through the hole, solid
+  // 4) Thin bright highlight on the upper-left of the rim (only on wall pixels) so the
+  //    bevel catches the light — completes the slightly-3D edge.
+  const highlight = buildBlobFigure(target.joints, { color: "rgba(255,245,190,0.55)", pad: HOLE_PADDING });
+  wallCtx.save();
+  wallCtx.globalCompositeOperation = "source-atop";
+  wallCtx.translate(-2, -2.5);
+  withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, highlight));
+  wallCtx.restore();
+
+  // 5) Composite the holed wall over the camera: camera shows through the hole, solid
   //    color everywhere else.
   ctx.drawImage(wallCtx.canvas, 0, 0);
 }
