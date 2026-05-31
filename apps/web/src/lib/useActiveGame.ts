@@ -100,8 +100,10 @@ export function useActiveGame() {
     lastPowerup,
     startGame: useCallback(() => send({ type: "game:start" }), [send]),
     endGame: useCallback(() => send({ type: "game:end" }), [send]),
+    devStartGame: useCallback(() => send({ type: "game:dev-start" }), [send]),
     claimRole: useCallback((role: GameRole) => send({ type: "role:claim", role }), [send]),
     sendRoleHeartbeat: useCallback((role: GameRole) => send({ type: "role:heartbeat", role }), [send]),
+    setRoleReady: useCallback((role: GameRole, ready: boolean) => send({ type: "role:ready", role, ready }), [send]),
     sendPose: useCallback((pose: UniversalPose) => send({ type: "pose:update", pose }), [send]),
     sendRoundSnapshot: useCallback((payload: RoundSnapshotPayload) => send({ type: "round:snapshot", payload }), [send]),
     sendPowerup: useCallback((payload: PowerupActivatePayload) => send({ type: "powerup:activate", payload }), [send])

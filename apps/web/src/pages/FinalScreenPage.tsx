@@ -1,7 +1,7 @@
 import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useSound } from "../providers/SoundProvider";
 import {
   dummyFinalStats,
@@ -149,9 +149,12 @@ function PlayerPanel({ side, winner }: { side: FinalSide; winner: FinalWinner })
 }
 
 export function FinalScreenPage() {
-  const [winner, setWinner] = useState<FinalWinner>("dummy");
+  const [searchParams] = useSearchParams();
+  const initialWinner = searchParams.get("winner") === "saboteur" ? "saboteur" : "dummy";
+  const [winner, setWinner] = useState<FinalWinner>(initialWinner);
   const { playSoundEffect } = useSound();
   const result = finalResultCopy[winner];
+  const isDev = import.meta.env.DEV;
 
   useEffect(() => {
     playSoundEffect(winner === "dummy" ? "cheer" : "boo");
@@ -184,17 +187,19 @@ export function FinalScreenPage() {
       <div className="relative z-[2] mt-auto flex shrink-0 flex-wrap items-center justify-center gap-[clamp(0.6rem,1.6vh,1rem)]">
         <Link
           className="inline-flex min-h-[3.25rem] items-center justify-center rounded-[1.3rem] border border-[#ee9a06] bg-[#ffaf09] px-8 text-[clamp(1rem,1.6vw,1.25rem)] font-black uppercase tracking-normal text-white no-underline shadow-[inset_0_3px_0_rgba(255,255,255,0.54),inset_0_-3px_0_rgba(206,120,0,0.22)] transition duration-200 hover:bg-[#f7a407] active:translate-y-1"
-          to="/game"
+          to="/"
         >
-          Play Again
+          Back Home
         </Link>
-        <button
-          className="inline-flex min-h-[3.25rem] items-center justify-center rounded-[1.3rem] bg-[#fff4df] px-6 text-[clamp(0.85rem,1.3vw,1rem)] font-black uppercase tracking-normal text-[#28303d] shadow-[inset_0_2px_0_rgba(255,255,255,0.68),inset_0_-3px_0_rgba(221,179,83,0.22)] transition duration-200 hover:bg-[#f8ead0] active:translate-y-1"
-          type="button"
-          onClick={toggleWinner}
-        >
-          Debug: Switch to {winner === "dummy" ? "Saboteur Won" : "Dummy Won"}
-        </button>
+        {isDev ? (
+          <button
+            className="inline-flex min-h-[3.25rem] items-center justify-center rounded-[1.3rem] bg-[#fff4df] px-6 text-[clamp(0.85rem,1.3vw,1rem)] font-black uppercase tracking-normal text-[#28303d] shadow-[inset_0_2px_0_rgba(255,255,255,0.68),inset_0_-3px_0_rgba(221,179,83,0.22)] transition duration-200 hover:bg-[#f8ead0] active:translate-y-1"
+            type="button"
+            onClick={toggleWinner}
+          >
+            Switch Winner
+          </button>
+        ) : null}
       </div>
     </section>
   );

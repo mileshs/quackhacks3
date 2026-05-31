@@ -16,11 +16,11 @@ import {
   type UniversalJoint,
   type UniversalPose
 } from "@quackhacks/shared";
-import { useNavigate } from "react-router-dom";
 import { SaboteurSplash } from "../components/SaboteurSplash";
 import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
 import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
+import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { cx, canvasPanel, saboteurJointHandleClass, saboteurStageBoundsRect, saboteurStageFloorLine, saboteurTorsoHandleIcon, saboteurViewport } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
@@ -125,24 +125,14 @@ const jointRotationLimits: Partial<Record<JointName, JointRotationLimit>> = {
 };
 
 export function SaboteurPage() {
-  const navigate = useNavigate();
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
   const [socketStatus, setSocketStatus] = useState("WebSocket connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showHole, setShowHole] = useState(false);
-  const {
-    claimedRole,
-    claimRole,
-    connectionStatus,
-    game,
-    lastRoundSnapshot,
-    roleError,
-    sendPose: sendGamePose,
-    sendPowerup,
-    sendRoleHeartbeat
-  } = useActiveGame();
+  const gameControls = useActiveGame();
+  const { connectionStatus, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
@@ -243,40 +233,6 @@ export function SaboteurPage() {
     setPowerupProgress((current) => registerSaboteurMove(current));
   }
 
-  useEffect(() => {
-    if (connectionStatus === "connected" && game?.activeGame && claimedRole !== GameRole.Saboteur && !roleError) {
-      claimRole(GameRole.Saboteur);
-    }
-  }, [claimRole, claimedRole, connectionStatus, game?.activeGame, roleError]);
-
-  useEffect(() => {
-    if (claimedRole !== GameRole.Saboteur) {
-      return;
-    }
-
-    sendRoleHeartbeat(GameRole.Saboteur);
-    const intervalId = window.setInterval(() => sendRoleHeartbeat(GameRole.Saboteur), 5_000);
-
-    return () => window.clearInterval(intervalId);
-  }, [claimedRole, sendRoleHeartbeat]);
-
-  useEffect(() => {
-    if (game && !game.activeGame) {
-      if (game.endReason === "role-disconnected" || game.endReason === "role-timeout") {
-        window.localStorage.setItem("quackhacks:gameEndNotice", "A player disconnected, so the game ended.");
-      }
-
-      navigate("/");
-    }
-  }, [game, navigate]);
-
-  useEffect(() => {
-    if (roleError) {
-      window.localStorage.setItem("quackhacks:gameEndNotice", "That role is not available anymore.");
-      navigate("/");
-    }
-  }, [navigate, roleError]);
-
   function randomizePose() {
     setPowerupProgress((current) => registerSaboteurMove(current));
     setSaveError(null);
@@ -375,6 +331,7 @@ export function SaboteurPage() {
   const socketReady = /ready|connected/i.test(socketStatus);
 
   return (
+    <RoleGameShell role={GameRole.Saboteur} controls={gameControls}>
     <section className="relative mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
       {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)]">
@@ -432,6 +389,7 @@ export function SaboteurPage() {
         </aside>
       </div>
     </section>
+    </RoleGameShell>
   );
 }
 

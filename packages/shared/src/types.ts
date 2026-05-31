@@ -10,7 +10,10 @@ export type RoleClaimStatus = "empty" | "occupied";
 export type RoleClaim = {
   status: RoleClaimStatus;
   lastSeenAt: string | null;
+  ready: boolean;
 };
+
+export type GamePhase = "idle" | "waiting" | "countdown" | "playing";
 
 export type JointName =
   | "head"
@@ -53,6 +56,8 @@ export type ActiveGameState = {
   startedAt: string | null;
   endedAt: string | null;
   endReason: "manual" | "role-disconnected" | "role-timeout" | null;
+  phase: GamePhase;
+  countdownStartedAt: string | null;
   updatedAt: string;
   playerCount: number;
   roles: Record<GameRole, RoleClaim>;
@@ -61,8 +66,10 @@ export type ActiveGameState = {
 export type GameClientMessage =
   | { type: "game:start" }
   | { type: "game:end" }
+  | { type: "game:dev-start" }
   | { type: "role:claim"; role: GameRole }
   | { type: "role:heartbeat"; role: GameRole }
+  | { type: "role:ready"; role: GameRole; ready: boolean }
   | { type: "pose:update"; pose: UniversalPose }
   | { type: "round:snapshot"; payload: RoundSnapshotPayload }
   | { type: "powerup:activate"; payload: PowerupActivatePayload };

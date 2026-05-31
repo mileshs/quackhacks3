@@ -1,8 +1,9 @@
 import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { GameRole } from "@quackhacks/shared";
 import { Link, useNavigate } from "react-router-dom";
+import { flushQueuedGameNotice, showGameNotice } from "../lib/gameNotifications";
 import { cx } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
 
@@ -13,7 +14,7 @@ const secondaryMenuItems: Array<{ to: string; label: string; icon: HomeIcon; ton
 ];
 
 const menuButtonBase =
-  "relative grid min-h-[clamp(4rem,7.25svh,4.85rem)] grid-cols-[5.85rem_1fr] items-center rounded-[1.45rem] px-7 py-2 pl-3 text-[clamp(1.34rem,1.7vw,1.8rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 min-[1181px]:grid-cols-[6.65rem_1fr] min-[1181px]:rounded-[1.62rem] min-[1181px]:text-[clamp(1.45rem,1.84vw,1.8rem)]";
+  "relative grid min-h-[clamp(4rem,7.25svh,4.85rem)] grid-cols-[5.5rem_minmax(0,1fr)] items-center rounded-[1.45rem] px-8 py-2 pl-4 text-center text-[clamp(1.22rem,1.48vw,1.62rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 [&>span:last-child]:justify-self-center [&>span:last-child]:whitespace-nowrap min-[1181px]:grid-cols-[6.2rem_minmax(0,1fr)] min-[1181px]:rounded-[1.62rem] min-[1181px]:text-[clamp(1.34rem,1.56vw,1.72rem)]";
 
 const menuButtonTone = {
   primary:
@@ -89,24 +90,18 @@ function HomeDecor() {
 export function HomePage() {
   const navigate = useNavigate();
   const { game, startGame, endGame } = useActiveGame();
-  const [gameEndNotice, setGameEndNotice] = useState<string | null>(null);
   const isGameActive = game?.activeGame ?? false;
   const isDummyTaken = game?.roles[GameRole.Dummy].status === "occupied";
   const isSaboteurTaken = game?.roles[GameRole.Saboteur].status === "occupied";
   const isGameFull = isDummyTaken && isSaboteurTaken;
 
   useEffect(() => {
-    const notice = window.localStorage.getItem("quackhacks:gameEndNotice");
-
-    if (notice) {
-      setGameEndNotice(notice);
-      window.localStorage.removeItem("quackhacks:gameEndNotice");
-    }
+    flushQueuedGameNotice();
   }, []);
 
   useEffect(() => {
     if (!game?.activeGame && (game?.endReason === "role-disconnected" || game?.endReason === "role-timeout")) {
-      setGameEndNotice("A player disconnected, so the game ended.");
+      showGameNotice("A player disconnected, so the game ended.");
     }
   }, [game?.activeGame, game?.endedAt, game?.endReason]);
 
@@ -120,13 +115,17 @@ export function HomePage() {
     }
   }
 
+  function createGame() {
+    startGame();
+  }
+
   return (
     <section
       className="fixed inset-0 z-20 flex min-h-svh items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_23%,rgba(255,248,190,0.42)_0_8.5rem,rgba(255,248,190,0)_25rem),radial-gradient(circle_at_98%_-10%,rgba(255,248,210,0.3)_0_16rem,rgba(255,248,210,0)_16.08rem),linear-gradient(145deg,#ffe066_0%,#ffd13c_43%,#ffc127_100%)] px-4 py-[clamp(1rem,3svh,2.5rem)] font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] text-[#28303d] before:absolute before:inset-0 before:bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0_1px,transparent_1.45px),linear-gradient(105deg,rgba(255,247,171,0.22),transparent_42%)] before:bg-[length:17px_17px,100%_100%] before:opacity-[0.48]"
       aria-labelledby="home-title"
     >
       <HomeDecor />
-      <div className="relative z-[2] flex max-h-full w-[min(31vw,500px)] min-w-[370px] flex-col items-center justify-center gap-[clamp(1rem,3.2svh,1.9rem)] max-[430px]:min-w-0 max-[430px]:w-full">
+      <div className="relative z-[2] flex max-h-full w-[min(38vw,560px)] min-w-[430px] flex-col items-center justify-center gap-[clamp(1rem,3.2svh,1.9rem)] max-[470px]:min-w-0 max-[470px]:w-full">
         <h1 id="home-title" className="sr-only">
           Poses for Dummies
         </h1>
@@ -135,14 +134,9 @@ export function HomePage() {
           src="/poses-for-dummies-logo.png"
           alt="Poses for Dummies"
         />
-        <nav className="flex w-[clamp(370px,24.2vw,406px)] max-w-full flex-col gap-[clamp(0.7rem,1.8svh,1.35rem)]" aria-label="Home">
-          {gameEndNotice ? (
-            <p className="m-0 rounded-2xl bg-white/70 px-5 py-3 text-center text-base leading-tight font-black text-[#8c3d18] shadow-[inset_0_2px_0_rgba(255,255,255,0.72)]">
-              {gameEndNotice}
-            </p>
-          ) : null}
+        <nav className="flex w-[clamp(430px,30vw,500px)] max-w-full flex-col gap-[clamp(0.7rem,1.8svh,1.35rem)]" aria-label="Home">
           {!isGameActive ? (
-            <button className={cx(menuButtonBase, menuButtonTone.primary)} type="button" onClick={startGame}>
+            <button className={cx(menuButtonBase, menuButtonTone.primary)} type="button" onClick={createGame}>
               <span className="grid size-[3.75rem] place-items-center justify-self-center drop-shadow-sm">
                 <MenuIcon icon="pose" />
               </span>

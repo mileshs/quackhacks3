@@ -12,10 +12,12 @@ import {
 const GAME_STATE_KEY = "global-game-state";
 const HEARTBEAT_TIMEOUT_MS = 12_000;
 const HEARTBEAT_SWEEP_MS = 4_000;
+const COUNTDOWN_MS = 3_000;
 
 type RoleSocketAttachment = {
   role?: GameRole;
   lastSeenAt?: string;
+  ready?: boolean;
 };
 
 type StoredGameState = Omit<ActiveGameState, "playerCount" | "roles">;
@@ -29,6 +31,8 @@ function createInactiveState(): StoredGameState {
     startedAt: null,
     endedAt: null,
     endReason: null,
+    phase: "idle",
+    countdownStartedAt: null,
     updatedAt: now
   };
 }
@@ -75,6 +79,11 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       return;
     }
 
+    if (message.type === "game:dev-start") {
+      await this.devStartGame();
+      return;
+    }
+
     if (message.type === "role:claim") {
       await this.claimRole(ws, message.role);
       return;
@@ -82,6 +91,11 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
 
     if (message.type === "role:heartbeat") {
       await this.refreshRole(ws, message.role);
+      return;
+    }
+
+    if (message.type === "role:ready") {
+      await this.setRoleReady(ws, message.role, message.ready);
       return;
     }
 
@@ -144,6 +158,8 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       startedAt: current.activeGame && current.startedAt ? current.startedAt : now,
       endedAt: null,
       endReason: null,
+      phase: "waiting",
+      countdownStartedAt: null,
       updatedAt: now
     });
   }
@@ -161,7 +177,24 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       startedAt: null,
       endedAt: now,
       endReason: reason,
+      phase: "idle",
+      countdownStartedAt: null,
       updatedAt: now
+    });
+  }
+
+  private async devStartGame() {
+    const state = await this.loadStoredState();
+
+    if (!state.activeGame) {
+      return;
+    }
+
+    await this.saveStoredState({
+      ...state,
+      phase: "playing",
+      countdownStartedAt: null,
+      updatedAt: new Date().toISOString()
     });
   }
 
@@ -180,7 +213,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       return;
     }
 
-    ws.serializeAttachment({ role, lastSeenAt: now } satisfies RoleSocketAttachment);
+    ws.serializeAttachment({ role, lastSeenAt: now, ready: false } satisfies RoleSocketAttachment);
     this.send(ws, { type: "role:accepted", role });
     await this.scheduleHeartbeatSweep();
     await this.broadcastState();
@@ -195,8 +228,44 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       return;
     }
 
-    ws.serializeAttachment({ role, lastSeenAt: new Date().toISOString() } satisfies RoleSocketAttachment);
+    const attachment = this.getSocketAttachment(ws);
+    ws.serializeAttachment({ ...attachment, role, lastSeenAt: new Date().toISOString() } satisfies RoleSocketAttachment);
     await this.scheduleHeartbeatSweep();
+    await this.broadcastState();
+  }
+
+  private async setRoleReady(ws: WebSocket, role: GameRole, ready: boolean) {
+    const state = await this.loadStoredState();
+    const currentRole = this.getSocketRole(ws);
+
+    if (!state.activeGame || currentRole !== role || state.phase === "playing") {
+      this.sendRoleRejected(ws, role, state.activeGame ? "taken" : "inactive-game");
+      return;
+    }
+
+    const attachment = this.getSocketAttachment(ws);
+    ws.serializeAttachment({
+      ...attachment,
+      role,
+      ready,
+      lastSeenAt: new Date().toISOString()
+    } satisfies RoleSocketAttachment);
+
+    if (this.allRolesReady()) {
+      await this.beginCountdown();
+      return;
+    }
+
+    if (state.phase === "countdown") {
+      await this.saveStoredState({
+        ...state,
+        phase: "waiting",
+        countdownStartedAt: null,
+        updatedAt: new Date().toISOString()
+      });
+      return;
+    }
+
     await this.broadcastState();
   }
 
@@ -205,8 +274,8 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       return this.cachedState;
     }
 
-    const stored = await this.ctx.storage.get<StoredGameState>(GAME_STATE_KEY);
-    this.cachedState = stored ?? createInactiveState();
+    const stored = await this.ctx.storage.get<Partial<StoredGameState>>(GAME_STATE_KEY);
+    this.cachedState = stored ? normalizeStoredState(stored) : createInactiveState();
 
     if (!stored) {
       await this.ctx.storage.put(GAME_STATE_KEY, this.cachedState);
@@ -271,7 +340,8 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       if (attachment.role && isGameRole(attachment.role)) {
         roles[attachment.role] = {
           status: "occupied",
-          lastSeenAt: attachment.lastSeenAt ?? null
+          lastSeenAt: attachment.lastSeenAt ?? null,
+          ready: attachment.ready ?? false
         };
       }
     }
@@ -300,6 +370,21 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
     }
 
     const now = Date.now();
+
+    if (state.phase === "countdown" && state.countdownStartedAt) {
+      const countdownElapsed = now - Date.parse(state.countdownStartedAt);
+
+      if (countdownElapsed >= COUNTDOWN_MS) {
+        await this.saveStoredState({
+          ...state,
+          phase: "playing",
+          countdownStartedAt: null,
+          updatedAt: new Date().toISOString()
+        });
+        return;
+      }
+    }
+
     const claimedRoles = Object.values(this.buildRoles()).filter((role) => role.status === "occupied");
     const hasTimedOutRole = claimedRoles.some((role) => {
       if (!role.lastSeenAt) {
@@ -314,7 +399,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       return;
     }
 
-    if (claimedRoles.length > 0) {
+    if (claimedRoles.length > 0 || state.phase === "countdown") {
       await this.scheduleHeartbeatSweep();
     }
   }
@@ -322,13 +407,36 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
   private async scheduleHeartbeatSweep() {
     await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_SWEEP_MS);
   }
+
+  private allRolesReady() {
+    const roles = this.buildRoles();
+
+    return (
+      roles[GameRole.Dummy].status === "occupied" &&
+      roles[GameRole.Saboteur].status === "occupied" &&
+      roles[GameRole.Dummy].ready &&
+      roles[GameRole.Saboteur].ready
+    );
+  }
+
+  private async beginCountdown() {
+    const state = await this.loadStoredState();
+
+    await this.saveStoredState({
+      ...state,
+      phase: "countdown",
+      countdownStartedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    await this.ctx.storage.setAlarm(Date.now() + COUNTDOWN_MS);
+  }
 }
 
 function parseClientMessage(rawMessage: string): GameClientMessage | null {
   try {
     const parsed = JSON.parse(rawMessage) as Partial<GameClientMessage> & { payload?: unknown };
 
-    if (parsed.type === "game:start" || parsed.type === "game:end") {
+    if (parsed.type === "game:start" || parsed.type === "game:end" || parsed.type === "game:dev-start") {
       return { type: parsed.type };
     }
 
@@ -340,6 +448,14 @@ function parseClientMessage(rawMessage: string): GameClientMessage | null {
       return {
         type: parsed.type,
         role: parsed.role
+      };
+    }
+
+    if (parsed.type === "role:ready" && parsed.role && isGameRole(parsed.role)) {
+      return {
+        type: "role:ready",
+        role: parsed.role,
+        ready: Boolean(parsed.ready)
       };
     }
 
@@ -372,8 +488,23 @@ function parseClientMessage(rawMessage: string): GameClientMessage | null {
 
 function createEmptyRoles(): ActiveGameState["roles"] {
   return {
-    [GameRole.Dummy]: { status: "empty", lastSeenAt: null },
-    [GameRole.Saboteur]: { status: "empty", lastSeenAt: null }
+    [GameRole.Dummy]: { status: "empty", lastSeenAt: null, ready: false },
+    [GameRole.Saboteur]: { status: "empty", lastSeenAt: null, ready: false }
+  };
+}
+
+function normalizeStoredState(stored: Partial<StoredGameState>): StoredGameState {
+  const fallback = createInactiveState();
+
+  return {
+    activeGame: stored.activeGame ?? fallback.activeGame,
+    gameId: stored.gameId ?? fallback.gameId,
+    startedAt: stored.startedAt ?? fallback.startedAt,
+    endedAt: stored.endedAt ?? fallback.endedAt,
+    endReason: stored.endReason ?? fallback.endReason,
+    phase: stored.phase ?? (stored.activeGame ? "waiting" : "idle"),
+    countdownStartedAt: stored.countdownStartedAt ?? fallback.countdownStartedAt,
+    updatedAt: stored.updatedAt ?? fallback.updatedAt
   };
 }
 
