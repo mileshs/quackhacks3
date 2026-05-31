@@ -1,5 +1,7 @@
 The following provides some info about the game we want to make. Use it as context when working on the project.
 
+Assume dev server alr running
+
 ## Stack
 frontend: client: Vite w/ React (typescript)
 CV: MediaPipe pose (JavaScript) 
