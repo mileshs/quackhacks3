@@ -1,7 +1,7 @@
 import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useSound } from "../providers/SoundProvider";
 import {
   dummyFinalStats,
@@ -240,9 +240,12 @@ function PlayerPanel({ side, winner, dark }: { side: FinalSide; winner: FinalWin
 }
 
 export function FinalScreenPage() {
-  const [winner, setWinner] = useState<FinalWinner>("dummy");
+  const [searchParams] = useSearchParams();
+  const initialWinner = searchParams.get("winner") === "saboteur" ? "saboteur" : "dummy";
+  const [winner, setWinner] = useState<FinalWinner>(initialWinner);
   const { playSoundEffect } = useSound();
   const result = finalResultCopy[winner];
+  const isDev = import.meta.env.DEV;
 
   useEffect(() => {
     playSoundEffect(winner === "dummy" ? "cheer" : "boo");
@@ -304,22 +307,24 @@ export function FinalScreenPage() {
               ? "border border-[#3a3a3a] bg-[#524c48] text-[#e8e4df] shadow-[inset_0_3px_0_rgba(255,255,255,0.1),inset_0_-3px_0_rgba(0,0,0,0.35)] hover:bg-[#5e5854]"
               : "border border-[#ee9a06] bg-[#ffaf09] text-white shadow-[inset_0_3px_0_rgba(255,255,255,0.54),inset_0_-3px_0_rgba(206,120,0,0.22)] hover:bg-[#f7a407]"
           )}
-          to="/game"
+          to="/"
         >
-          Play Again
+          Back Home
         </Link>
-        <button
-          className={cx(
-            "inline-flex min-h-[3.25rem] items-center justify-center rounded-[1.3rem] px-6 text-[clamp(0.85rem,1.3vw,1rem)] font-black uppercase tracking-normal transition duration-200 active:translate-y-1",
-            saboteurWon
-              ? "bg-[#3a3634] text-[#d4d0cc] shadow-[inset_0_2px_0_rgba(255,255,255,0.08),inset_0_-3px_0_rgba(0,0,0,0.4)] hover:bg-[#45413e]"
-              : "bg-[#fff4df] text-[#28303d] shadow-[inset_0_2px_0_rgba(255,255,255,0.68),inset_0_-3px_0_rgba(221,179,83,0.22)] hover:bg-[#f8ead0]"
-          )}
-          type="button"
-          onClick={toggleWinner}
-        >
-          Debug: Switch to {winner === "dummy" ? "Saboteur Won" : "Dummy Won"}
-        </button>
+        {isDev ? (
+          <button
+            className={cx(
+              "inline-flex min-h-[3.25rem] items-center justify-center rounded-[1.3rem] px-6 text-[clamp(0.85rem,1.3vw,1rem)] font-black uppercase tracking-normal transition duration-200 active:translate-y-1",
+              saboteurWon
+                ? "bg-[#3a3634] text-[#d4d0cc] shadow-[inset_0_2px_0_rgba(255,255,255,0.08),inset_0_-3px_0_rgba(0,0,0,0.4)] hover:bg-[#45413e]"
+                : "bg-[#fff4df] text-[#28303d] shadow-[inset_0_2px_0_rgba(255,255,255,0.68),inset_0_-3px_0_rgba(221,179,83,0.22)] hover:bg-[#f8ead0]"
+            )}
+            type="button"
+            onClick={toggleWinner}
+          >
+            Debug: Switch to {winner === "dummy" ? "Saboteur Won" : "Dummy Won"}
+          </button>
+        ) : null}
       </div>
     </section>
   );

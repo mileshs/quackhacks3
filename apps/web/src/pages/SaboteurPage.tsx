@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type p5 from "p5";
 import {
+  GameRole,
   HOLE_PADDING,
   applyRoundSnapshot,
   buildBlobFigure,
@@ -12,17 +13,17 @@ import {
   type FaceMode,
   type FigurePrimitive,
   type JointName,
-  type RoundSnapshotPayload,
   type SaboteurPowerupProgress,
   type UniversalJoint,
   type UniversalPose
 } from "@quackhacks/shared";
-import { createSocketConnection } from "../lib/realtime";
 import { drawDummyScene3D, type ScreenPoint } from "../lib/dummy3d";
 import { SaboteurSplash } from "../components/SaboteurSplash";
 import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
 import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
+import { SaboteurTutorialOverlay } from "../components/SaboteurTutorialOverlay";
+import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
 import { SKELETON_ADJUSTMENT_SOUNDS, useSound } from "../providers/SoundProvider";
@@ -39,6 +40,7 @@ import {
   saboteurTorsoHandleIcon,
   saboteurViewport
 } from "../lib/ui";
+import { useActiveGame } from "../lib/useActiveGame";
 
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 const JOINT_HANDLE_RADIUS = 10;
@@ -193,8 +195,9 @@ function SaveErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
   return (
     <div
       role="alert"
+      data-saboteur-save-error
       className={cx(
-        "pointer-events-none absolute left-5 top-5 z-20 max-w-[min(80%,320px)] rounded-[10px] bg-[#ef5c6b] px-3 py-2 text-sm font-bold text-white shadow-[0_8px_22px_rgba(150,25,40,0.5)] transition-opacity duration-300",
+        "pointer-events-none absolute left-1/2 bottom-[26%] z-20 max-w-[min(92%,320px)] -translate-x-1/2 rounded-[10px] bg-[#ef5c6b] px-3 py-2 text-center text-sm font-bold text-white shadow-[0_8px_22px_rgba(150,25,40,0.5)] transition-opacity duration-300",
         visible ? "opacity-100" : "opacity-0"
       )}
     >
@@ -211,24 +214,26 @@ export function SaboteurPage() {
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
-  const [socketStatus, setSocketStatus] = useState("Socket.IO connecting");
+  const [socketStatus, setSocketStatus] = useState("WebSocket connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
   // Bumped on each failed save so the error toast re-mounts and replays its fade even
   // when the message text is identical to the previous attempt.
   const [saveErrorNonce, setSaveErrorNonce] = useState(0);
   const [showHole, setShowHole] = useState(false);
+  const gameControls = useActiveGame();
+  const { connectionStatus, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
     }
     return window.localStorage.getItem(SPLASH_SEEN_STORAGE_KEY) !== "true";
   });
+  const [tutorialRun, setTutorialRun] = useState(0);
   const [powerupProgress, setPowerupProgress] = useState<SaboteurPowerupProgress>({
     inventory: [],
     perfectStreak: 0,
     movesSinceGrant: 0
   });
-  const socketRef = useRef<ReturnType<typeof createSocketConnection> | null>(null);
 
   function dismissSplash() {
     setShowSplash(false);
@@ -285,21 +290,17 @@ export function SaboteurPage() {
   }
 
   useEffect(() => {
-    const socket = createSocketConnection();
-    socketRef.current = socket;
+    setSocketStatus(`WebSocket ${connectionStatus}`);
+  }, [connectionStatus]);
 
-    socket.on("connect", () => setSocketStatus(`Socket.IO connected: ${socket.id}`));
-    socket.on("server:hello", () => setSocketStatus(`Socket.IO ready: ${socket.id}`));
-    socket.on("connect_error", () => setSocketStatus("Socket.IO unavailable"));
-    socket.on("round:snapshot", (payload: RoundSnapshotPayload) => {
-      setPowerupProgress((current) => applyRoundSnapshot(current, payload.band));
-      setSocketStatus(`Round: ${payload.band} (${payload.matchPercent}%)`);
-    });
+  useEffect(() => {
+    if (!lastRoundSnapshot) {
+      return;
+    }
 
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+    setPowerupProgress((current) => applyRoundSnapshot(current, lastRoundSnapshot.band));
+    setSocketStatus(`Round: ${lastRoundSnapshot.band} (${lastRoundSnapshot.matchPercent}%)`);
+  }, [lastRoundSnapshot]);
 
   function activatePowerup(slotId: string) {
     const slot = powerupProgress.inventory.find((entry) => entry.id === slotId);
@@ -307,9 +308,10 @@ export function SaboteurPage() {
       return;
     }
 
-    socketRef.current?.emit("powerup:activate", {
+    sendPowerup({
       kind: slot.kind,
-      durationMs: DEFAULT_POWERUP_DURATION_MS
+      durationMs: DEFAULT_POWERUP_DURATION_MS,
+      sentAt: new Date().toISOString()
     });
 
     setPowerupProgress((current) => ({
@@ -419,14 +421,14 @@ export function SaboteurPage() {
   }
 
   function broadcastPose(selectedPose: UniversalPose) {
-    socketRef.current?.emit("pose:preview", selectedPose);
+    sendGamePose(selectedPose);
     setSocketStatus(`Sent ${selectedPose.name}`);
   }
 
   const socketReady = /ready|connected/i.test(socketStatus);
 
   return (
-    <>
+    <RoleGameShell role={GameRole.Saboteur} controls={gameControls}>
       <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
       <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
       {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
@@ -435,10 +437,10 @@ export function SaboteurPage() {
         <div className="flex min-h-0 flex-col gap-3">
           {/* Canvas card: stage + tool buttons along the bottom of the dark viewport. */}
           <div className={cx(saboteurCard, "relative flex min-h-[min(70vh,680px)] flex-1 flex-col overflow-hidden p-3")}>
-            {saveError ? (
-              <SaveErrorToast key={saveErrorNonce} message={saveError} onDismiss={() => setSaveError(null)} />
-            ) : null}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-[#0c0d12] shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)]">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-[#0c0d12] shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)]">
+              {saveError ? (
+                <SaveErrorToast key={saveErrorNonce} message={saveError} onDismiss={() => setSaveError(null)} />
+              ) : null}
               <div className="flex min-h-0 flex-1 items-center justify-center px-2 py-2">
                 {showHole ? (
                   <SaboteurHolePreview pose={displayPose} />
@@ -458,6 +460,7 @@ export function SaboteurPage() {
                 onToggleHole={() => setShowHole((current) => !current)}
                 onSavePose={addPose}
                 onSendPose={sendPose}
+                onStartTutorial={() => setTutorialRun((run) => run + 1)}
               />
             </div>
           </div>
@@ -509,7 +512,8 @@ export function SaboteurPage() {
         </aside>
       </div>
     </section>
-    </>
+      <SaboteurTutorialOverlay runKey={tutorialRun} />
+    </RoleGameShell>
   );
 }
 
@@ -606,14 +610,22 @@ function StageBounds() {
  * — with `preserveAspectRatio="xMidYMid meet"` centering — so the 3D dummy lines up pixel
  * for pixel with the SVG joint handles / bounds overlaid on top of it.
  */
+function randomBlinkDelayMs() {
+  return 2200 + Math.random() * 4800;
+}
+
+const BLINK_CLOSE_MS = 130;
+
 function Dummy3DStage({
   pose,
   faceMode = "happy",
-  className
+  className,
+  blink = true
 }: {
   pose: UniversalPose;
   faceMode?: FaceMode;
   className?: string;
+  blink?: boolean;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   // The detect/animation loop reads the latest pose + face through refs so we never have
@@ -622,6 +634,39 @@ function Dummy3DStage({
   poseRef.current = pose;
   const faceModeRef = useRef<FaceMode>(faceMode);
   faceModeRef.current = faceMode;
+  const eyesClosedRef = useRef(false);
+
+  useEffect(() => {
+    if (!blink) {
+      eyesClosedRef.current = false;
+      return;
+    }
+
+    let blinkTimer = 0;
+    let openTimer = 0;
+
+    const scheduleBlink = () => {
+      blinkTimer = window.setTimeout(() => {
+        if (faceModeRef.current !== "squeeze") {
+          eyesClosedRef.current = true;
+          openTimer = window.setTimeout(() => {
+            eyesClosedRef.current = false;
+            scheduleBlink();
+          }, BLINK_CLOSE_MS);
+          return;
+        }
+        scheduleBlink();
+      }, randomBlinkDelayMs());
+    };
+
+    scheduleBlink();
+
+    return () => {
+      window.clearTimeout(blinkTimer);
+      window.clearTimeout(openTimer);
+      eyesClosedRef.current = false;
+    };
+  }, [blink]);
 
   useEffect(() => {
     let sketch: p5 | undefined;
@@ -675,7 +720,8 @@ function Dummy3DStage({
             s,
             width: p.width,
             height: p.height,
-            faceMode: faceModeRef.current
+            faceMode: faceModeRef.current,
+            eyesClosed: blink && eyesClosedRef.current && faceModeRef.current === "happy"
           });
         };
       }, mountRef.current);
@@ -784,6 +830,10 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
   const [isWriggling, setIsWriggling] = useState(false);
   const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
   const torsoCenter = getTorsoCenter(jointMap);
+  const footGrounded = useMemo(
+    () => hasGroundedFoot(applyPoseConstraints(pose, activeJoint ?? "hips")),
+    [pose, activeJoint]
+  );
 
   useEffect(() => {
     latestPoseRef.current = pose;
@@ -890,6 +940,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
         viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
         role="img"
         aria-label="Editable saboteur pose"
+        data-foot-grounded={footGrounded ? "true" : "false"}
         onPointerMove={moveActiveJoint}
         onPointerUp={stopPointerAction}
         onPointerCancel={stopPointerAction}
@@ -914,6 +965,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
         {pose.joints.map((joint) => (
           <circle
             key={joint.name}
+            data-tutorial-joint={joint.name}
             cx={joint.x * universalHumanSize.width}
             cy={joint.y * universalHumanSize.height}
             r={JOINT_HANDLE_RADIUS}
@@ -966,6 +1018,7 @@ function TorsoMoveHandle({
       onPointerDown={onPointerDown}
       className={isWriggling ? "cursor-grabbing" : "cursor-grab"}
       aria-label="Move entire pose"
+      data-tutorial-move-handle
     >
       <circle r={16} className="fill-transparent" />
       <g className={saboteurTorsoHandleIcon}>

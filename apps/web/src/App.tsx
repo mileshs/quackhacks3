@@ -1,23 +1,18 @@
 import { lazy, Suspense, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
-import { FinalScreenPage } from "./pages/FinalScreenPage";
-import { GamePage } from "./pages/GamePage";
+import { Toaster } from "sonner";
 import { HomePage } from "./pages/HomePage";
-import { LeaderboardPage } from "./pages/LeaderboardPage";
+import { FinalScreenPage } from "./pages/FinalScreenPage";
 import { PoseTestPage } from "./pages/PoseTestPage";
 import { SaboteurPage } from "./pages/SaboteurPage";
-import { ScorePage } from "./pages/ScorePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ChromeContext } from "./lib/chrome";
 import { appShell, brand, navLink, navList, topbar } from "./lib/ui";
 
 const navItems = [
   { to: "/", label: "Home" },
-  { to: "/game", label: "Game" },
   { to: "/pose-test", label: "Pose Test" },
   { to: "/saboteur", label: "Saboteur" },
-  { to: "/final-screen", label: "Final Screen" },
-  { to: "/leaderboard", label: "Leaderboard" },
   { to: "/settings", label: "Settings" }
 ];
 
@@ -48,13 +43,10 @@ export function App() {
         <main>
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/game" element={<GamePage />} />
             <Route path="/pose-test" element={<PoseTestPage />} />
             <Route path="/saboteur" element={<SaboteurPage />} />
-            <Route path="/final-screen" element={<FinalScreenPage />} />
-            <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/score" element={<ScorePage />} />
+            <Route path="/score" element={<FinalScreenPage />} />
           </Routes>
         </main>
       </div>
@@ -63,6 +55,17 @@ export function App() {
           <DevAgentation />
         </Suspense>
       ) : null}
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          classNames: {
+            toast:
+              "font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] rounded-2xl border-0! bg-white/82! px-5! py-3! text-center text-base! leading-tight font-black! text-[#8c3d18]! shadow-[inset_0_2px_0_rgba(255,255,255,0.72),0_14px_36px_rgba(143,101,11,0.22)]! backdrop-blur-md",
+            title: "text-center font-black!",
+            closeButton: "bg-white! text-[#8c3d18]!"
+          }
+        }}
+      />
     </ChromeContext.Provider>
   );
 }
