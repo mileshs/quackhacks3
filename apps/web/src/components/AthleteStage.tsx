@@ -309,8 +309,15 @@ export function AthleteStage({
           const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
           const live = landmarks ? landmarksToUniversalPose(landmarks, aspect, { mirror: true }) : null;
 
+          // The universal pose is hip-centered (for fair, position-independent scoring),
+          // so it can't show the player moving left/right. Track the player's real
+          // horizontal frame position separately and slide the drawn dummy to follow it.
+          const lHip = landmarks?.[23];
+          const rHip = landmarks?.[24];
+          const hipFrameX = lHip && rHip ? (lHip.x + rHip.x) / 2 : null;
+
           if (ctx) {
-            drawFrame(ctx, live, handClosed, targetRef.current, showDummyRef.current);
+            drawFrame(ctx, live, handClosed, targetRef.current, showDummyRef.current, hipFrameX);
           }
 
           const now = performance.now();
@@ -465,7 +472,8 @@ function drawFrame(
   livePose: UniversalPose | null,
   handClosed: HandClosed,
   target: UniversalPose,
-  showDummy: boolean
+  showDummy: boolean,
+  hipFrameX: number | null
 ) {
   const { width, height } = ctx.canvas;
 
@@ -479,7 +487,7 @@ function drawFrame(
   drawHoleOverlay(ctx, target, width, height);
 
   if (showDummy && livePose) {
-    drawDummy(ctx, livePose, handClosed, width, height);
+    drawDummy(ctx, livePose, handClosed, width, height, hipFrameX);
   }
 }
 
@@ -508,10 +516,20 @@ function drawDummy(
   pose: UniversalPose,
   handClosed: HandClosed,
   width: number,
-  height: number
+  height: number,
+  hipFrameX: number | null
 ) {
   const region = holeRegion(width, height);
   const prims = buildBlobFigure(pose.joints, { withFace: true, faceMode: "happy", color: BLOB_COLOR });
+
+  // Slide the (hip-centered) dummy horizontally to the player's real, mirrored frame
+  // position so moving left/right in front of the camera moves the dummy. The hips sit
+  // at universal x = 0.5 (region center); offset by the difference to the live spot.
+  let followX = 0;
+  if (hipFrameX !== null) {
+    const mirroredFrameX = 1 - hipFrameX;
+    followX = mirroredFrameX * width - (region.x0 + region.w / 2);
+  }
 
   // Recolor a grabbing hand: a red circle painted over the blue wrist blob.
   const jointAt = (name: UniversalPose["joints"][number]["name"]) => {
@@ -528,7 +546,10 @@ function drawDummy(
     grabPrims.push({ kind: "circle", c: rightWrist, r: 17, fill: HAND_GRAB_COLOR });
   }
 
+  ctx.save();
+  ctx.translate(followX, 0);
   withRegionTransform(ctx, region, () => paintFigure(ctx, [...prims, ...grabPrims]));
+  ctx.restore();
 }
 
 /**
