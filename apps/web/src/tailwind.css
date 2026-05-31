@@ -1,1 +1,267 @@
 @import "tailwindcss";
+
+/* ===== Saboteur splash screen ===== */
+@layer components {
+  .sabotage-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.4rem;
+    cursor: pointer;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 38%, #2c0202 0%, #120000 55%, #000 100%);
+    animation: sabotage-splash-in 0.25s ease both;
+  }
+
+  .sabotage-glow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 42%, rgba(255, 30, 30, 0.35) 0%, transparent 45%);
+    animation: sabotage-pulse 2.6s ease-in-out infinite;
+  }
+
+  .sabotage-scanlines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.05) 0,
+      rgba(255, 255, 255, 0.05) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    mix-blend-mode: overlay;
+    opacity: 0.5;
+    animation: sabotage-scan 8s linear infinite;
+  }
+
+  .sabotage-kicker {
+    margin: 0;
+    font-size: clamp(0.7rem, 2vw, 1rem);
+    letter-spacing: 0.55em;
+    text-transform: uppercase;
+    color: #ff8a8a;
+    opacity: 0;
+    animation: sabotage-fade 0.5s ease 0.15s both;
+  }
+
+  .sabotage-title {
+    position: relative;
+    margin: 0;
+    font-weight: 900;
+    font-size: clamp(3.5rem, 17vw, 13rem);
+    line-height: 0.85;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #ff2424;
+    -webkit-text-stroke: 2px rgba(255, 255, 255, 0.06);
+    text-shadow: 0 0 18px rgba(255, 36, 36, 0.85), 0 0 64px rgba(255, 0, 0, 0.5);
+  }
+
+  .sabotage-title span {
+    display: inline-block;
+    animation: sabotage-slam 0.55s cubic-bezier(0.2, 1.5, 0.35, 1) both;
+  }
+
+  .sabotage-title::before,
+  .sabotage-title::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    mix-blend-mode: screen;
+  }
+
+  .sabotage-title::before {
+    color: #00e5ff;
+    animation: sabotage-glitch-a 1.9s steps(2, jump-none) 0.7s infinite;
+  }
+
+  .sabotage-title::after {
+    color: #ff00c8;
+    animation: sabotage-glitch-b 2.3s steps(2, jump-none) 0.7s infinite;
+  }
+
+  .sabotage-sub {
+    margin: 0;
+    font-size: clamp(1rem, 3vw, 1.7rem);
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #ffd1d1;
+    opacity: 0;
+    animation: sabotage-fade 0.6s ease 0.75s both;
+  }
+
+  .sabotage-cta {
+    margin-top: 0.6rem;
+    padding: 0.7rem 2.6rem;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #fff;
+    background: linear-gradient(180deg, #ff3636, #c40d0d);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(255, 40, 40, 0.6);
+    opacity: 0;
+    animation: sabotage-fade 0.6s ease 0.95s both, sabotage-cta-pulse 1.8s ease-in-out 1.2s infinite;
+  }
+
+  .sabotage-cta:hover {
+    background: linear-gradient(180deg, #ff5454, #e01414);
+  }
+}
+
+@keyframes sabotage-splash-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sabotage-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sabotage-slam {
+  0% {
+    transform: scale(2.6) rotate(-7deg);
+    opacity: 0;
+    filter: blur(14px);
+  }
+  55% {
+    transform: scale(0.9) rotate(2deg);
+    opacity: 1;
+    filter: blur(0);
+  }
+  72% {
+    transform: scale(1.07) rotate(-1.5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+@keyframes sabotage-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sabotage-scan {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 120px;
+  }
+}
+
+@keyframes sabotage-cta-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 22px rgba(255, 40, 40, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 40, 40, 0.95);
+  }
+}
+
+@keyframes sabotage-glitch-a {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0);
+    clip-path: inset(0 0 0 0);
+  }
+  10% {
+    opacity: 0.9;
+    transform: translate(-5px, -2px);
+    clip-path: inset(0 0 62% 0);
+  }
+  30% {
+    opacity: 0.8;
+    transform: translate(4px, 1px);
+    clip-path: inset(40% 0 20% 0);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translate(-6px, 2px);
+    clip-path: inset(10% 0 70% 0);
+  }
+  70% {
+    opacity: 0.7;
+    transform: translate(3px, -1px);
+    clip-path: inset(70% 0 8% 0);
+  }
+  85% {
+    opacity: 0;
+  }
+}
+
+@keyframes sabotage-glitch-b {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0);
+    clip-path: inset(0 0 0 0);
+  }
+  15% {
+    opacity: 0.8;
+    transform: translate(5px, 2px);
+    clip-path: inset(55% 0 12% 0);
+  }
+  35% {
+    opacity: 0.9;
+    transform: translate(-4px, -1px);
+    clip-path: inset(15% 0 60% 0);
+  }
+  55% {
+    opacity: 0.7;
+    transform: translate(6px, 1px);
+    clip-path: inset(72% 0 6% 0);
+  }
+  78% {
+    opacity: 0.85;
+    transform: translate(-3px, 2px);
+    clip-path: inset(30% 0 40% 0);
+  }
+  90% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sabotage-title span,
+  .sabotage-title::before,
+  .sabotage-title::after,
+  .sabotage-glow,
+  .sabotage-scanlines,
+  .sabotage-cta {
+    animation-duration: 0.001s;
+    animation-iteration-count: 1;
+  }
+}
