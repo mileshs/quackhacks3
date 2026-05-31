@@ -33,6 +33,7 @@ function createInactiveState(): StoredGameState {
     endReason: null,
     phase: "idle",
     countdownStartedAt: null,
+    playingStartedAt: null,
     updatedAt: now
   };
 }
@@ -166,6 +167,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       endReason: null,
       phase: "waiting",
       countdownStartedAt: null,
+      playingStartedAt: null,
       updatedAt: now
     });
   }
@@ -185,6 +187,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       endReason: reason,
       phase: "idle",
       countdownStartedAt: null,
+      playingStartedAt: null,
       updatedAt: now
     });
   }
@@ -202,6 +205,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
         ...state,
         phase: "waiting",
         countdownStartedAt: null,
+        playingStartedAt: null,
         updatedAt: new Date().toISOString()
       });
       return;
@@ -222,6 +226,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       ...state,
       phase: "playing",
       countdownStartedAt: null,
+      playingStartedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
   }
@@ -289,6 +294,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
         ...state,
         phase: "waiting",
         countdownStartedAt: null,
+        playingStartedAt: null,
         updatedAt: new Date().toISOString()
       });
       return;
@@ -409,6 +415,7 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       ...state,
       phase: "playing",
       countdownStartedAt: null,
+      playingStartedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     } satisfies StoredGameState;
 
@@ -589,6 +596,7 @@ function normalizeStoredState(stored: Partial<StoredGameState>): StoredGameState
     endReason: stored.endReason ?? fallback.endReason,
     phase: stored.phase ?? (stored.activeGame ? "waiting" : "idle"),
     countdownStartedAt: stored.countdownStartedAt ?? fallback.countdownStartedAt,
+    playingStartedAt: stored.playingStartedAt ?? fallback.playingStartedAt,
     updatedAt: stored.updatedAt ?? fallback.updatedAt
   };
 }
