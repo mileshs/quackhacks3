@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { GameRole } from "@quackhacks/shared";
 import { useNavigate } from "react-router-dom";
 import { queueGameNotice } from "../lib/gameNotifications";
 import { useDevSection } from "../lib/settings";
-import { useTempo } from "../lib/tempo";
+import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
+import { useSoundtrackGameSync } from "../hooks/useSoundtrackGameSync";
+import { GameTempoProvider, useGameTempo } from "../lib/tempo";
 import { cx } from "../lib/ui";
 import { TempoIndicator } from "./TempoIndicator";
 import type { useActiveGame } from "../lib/useActiveGame";
@@ -36,13 +38,18 @@ const roleLabels = {
 
 export function RoleGameShell({ role, controls, children }: RoleGameShellProps) {
   const navigate = useNavigate();
+  const { playSoundEffect } = useRoleScopedSound(role);
+  const lastCountdownAnchorRef = useRef<string | null>(null);
+  const playedGameOverRef = useRef(false);
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
   const [devSolo, setDevSolo] = useState(false);
+  const [devSoloStartedAt, setDevSoloStartedAt] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const {
     claimedRole,
     claimRole,
     connectionStatus,
+    completeGame,
     devStartGame,
     endGame,
     game,
@@ -62,8 +69,38 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
   const selfReady = selfClaim?.ready ?? false;
   const otherReady = otherClaim?.ready ?? false;
   const playing = devSolo || game?.phase === "playing";
-  // Synced 8-count, derived from the server's shared play-start anchor (null until playing).
-  const tempo = useTempo(game?.playingStartedAt ?? null);
+  const playingStartedAt = game?.playingStartedAt ?? devSoloStartedAt;
+
+  const playGameOverOnce = useCallback(() => {
+    if (playedGameOverRef.current) {
+      return;
+    }
+
+    playedGameOverRef.current = true;
+    playSoundEffect("gameOver");
+  }, [playSoundEffect]);
+
+  const handleSoundtrackComplete = useCallback(() => {
+    if (hasActiveGame) {
+      completeGame();
+      return;
+    }
+
+    if (devSolo) {
+      playGameOverOnce();
+      setDevSolo(false);
+      setDevSoloStartedAt(null);
+      navigate("/score?winner=dummy");
+    }
+  }, [completeGame, devSolo, hasActiveGame, navigate, playGameOverOnce]);
+
+  // Soundtrack audio only on the dummy/poser screen (avoids double playback with saboteur open).
+  useSoundtrackGameSync({
+    playing: role === GameRole.Dummy && playing,
+    playingStartedAt: role === GameRole.Dummy && playing ? playingStartedAt : null,
+    onSoundtrackComplete: handleSoundtrackComplete,
+  });
+
   const countdownSeconds = useMemo(() => {
     if (game?.phase !== "countdown" || !game.countdownStartedAt) {
       return null;
@@ -74,6 +111,31 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
   }, [game?.countdownStartedAt, game?.phase, now]);
 
   useEffect(() => {
+    if (game?.phase !== "countdown" || !game.countdownStartedAt) {
+      if (game?.phase !== "countdown") {
+        lastCountdownAnchorRef.current = null;
+      }
+      return;
+    }
+
+    if (lastCountdownAnchorRef.current === game.countdownStartedAt) {
+      return;
+    }
+
+    lastCountdownAnchorRef.current = game.countdownStartedAt;
+    playSoundEffect("countdown");
+  }, [game?.phase, game?.countdownStartedAt, playSoundEffect]);
+
+  useEffect(() => {
+    if (!game?.endReason) {
+      playedGameOverRef.current = false;
+      return;
+    }
+
+    playGameOverOnce();
+  }, [game?.endReason, playGameOverOnce]);
+
+  useEffect(() => {
     if (!isDev && game && !game.activeGame && !game.endReason) {
       navigate("/");
     }
@@ -81,6 +143,12 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
 
   useEffect(() => {
     if (!game || game.activeGame) {
+      return;
+    }
+
+    if (game.endReason === "soundtrack-complete") {
+      queueGameNotice("The dummy survived the track!");
+      navigate("/score?winner=dummy");
       return;
     }
 
@@ -142,6 +210,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
       return;
     }
 
+    setDevSoloStartedAt(new Date().toISOString());
     setDevSolo(true);
   }, [hasActiveGame, devStartGame]);
 
@@ -151,7 +220,14 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
     () => (
       <div className="flex flex-col gap-2">
         <span className="text-[11px] font-extrabold tracking-[0.12em] text-[#a89a82] uppercase">Game</span>
-        <button className={devMenuButton} type="button" onClick={() => navigate(`/score?winner=${role}`)}>
+        <button
+          className={devMenuButton}
+          type="button"
+          onClick={() => {
+            playGameOverOnce();
+            navigate(`/score?winner=${role}`);
+          }}
+        >
           I Won
         </button>
         <button className={devMenuDanger} type="button" onClick={() => setConfirmEndOpen(true)}>
@@ -162,7 +238,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
         </button>
       </div>
     ),
-    [navigate, role, startDevSolo]
+    [navigate, playGameOverOnce, role, startDevSolo]
   );
   useDevSection("game", gameDevSection);
 
@@ -181,11 +257,43 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
   );
 
   return (
+    <GameTempoProvider playingStartedAt={playing ? playingStartedAt : null}>
+      <RoleGameShellView
+        confirmEndOpen={confirmEndOpen}
+        overlay={overlay}
+        playing={playing}
+        setConfirmEndOpen={setConfirmEndOpen}
+        onConfirmEndGame={confirmEndGame}
+      >
+        {children}
+      </RoleGameShellView>
+    </GameTempoProvider>
+  );
+}
+
+function RoleGameShellView({
+  children,
+  confirmEndOpen,
+  overlay,
+  playing,
+  setConfirmEndOpen,
+  onConfirmEndGame,
+}: {
+  children: ReactNode;
+  confirmEndOpen: boolean;
+  overlay: ReactNode;
+  playing: boolean;
+  setConfirmEndOpen: (open: boolean) => void;
+  onConfirmEndGame: () => void;
+}) {
+  const tempo = useGameTempo();
+
+  return (
     <div className="relative min-h-[calc(100dvh-4.5rem)] overflow-hidden">
       <div
         className={cx(
           "transition duration-500",
-          overlay && "pointer-events-none scale-[0.99] opacity-35 blur-[2px]"
+          overlay != null && "pointer-events-none scale-[0.99] opacity-35 blur-[2px]"
         )}
       >
         {children}
@@ -204,7 +312,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
               This will close the active run for both screens.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-              <button className="inline-flex min-h-13 items-center justify-center rounded-[1rem] border border-[#d93236] bg-[#ef4b4f] px-7 py-3 font-black text-white uppercase shadow-[inset_0_3px_0_rgba(255,255,255,0.42),inset_0_-3px_0_rgba(142,20,27,0.28)] [text-shadow:0_2px_0_rgba(100,10,16,0.24)]" type="button" onClick={confirmEndGame}>
+              <button className="inline-flex min-h-13 items-center justify-center rounded-[1rem] border border-[#d93236] bg-[#ef4b4f] px-7 py-3 font-black text-white uppercase shadow-[inset_0_3px_0_rgba(255,255,255,0.42),inset_0_-3px_0_rgba(142,20,27,0.28)] [text-shadow:0_2px_0_rgba(100,10,16,0.24)]" type="button" onClick={onConfirmEndGame}>
                 End Game
               </button>
               <button className="inline-flex min-h-13 items-center justify-center rounded-[1rem] bg-white px-7 py-3 font-black text-[#28303d] uppercase shadow-[inset_0_2px_0_rgba(255,255,255,0.8),inset_0_-3px_0_rgba(221,179,83,0.22)]" type="button" onClick={() => setConfirmEndOpen(false)}>

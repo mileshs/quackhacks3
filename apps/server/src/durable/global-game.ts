@@ -83,6 +83,11 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       return;
     }
 
+    if (message.type === "game:complete") {
+      await this.endGame("soundtrack-complete");
+      return;
+    }
+
     if (message.type === "game:dev-start") {
       await this.devStartGame();
       return;
@@ -528,7 +533,12 @@ function parseClientMessage(rawMessage: string): GameClientMessage | null {
   try {
     const parsed = JSON.parse(rawMessage) as Partial<GameClientMessage> & { payload?: unknown };
 
-    if (parsed.type === "game:start" || parsed.type === "game:end" || parsed.type === "game:dev-start") {
+    if (
+      parsed.type === "game:start" ||
+      parsed.type === "game:end" ||
+      parsed.type === "game:complete" ||
+      parsed.type === "game:dev-start"
+    ) {
       return { type: parsed.type };
     }
 
