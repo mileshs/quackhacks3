@@ -7,8 +7,10 @@ import {
   type UniversalPose
 } from "@quackhacks/shared";
 import { createSocketConnection } from "../lib/realtime";
+import { SaboteurSplash } from "../components/SaboteurSplash";
 
 const SAVED_POSES_STORAGE_KEY = "quackhacks:saboteur:savedPoses";
+const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 
 function loadSavedPoses(): UniversalPose[] {
   if (typeof window === "undefined") {
@@ -155,7 +157,20 @@ export function SaboteurPage() {
   const [socketStatus, setSocketStatus] = useState("Socket.IO connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showHole, setShowHole] = useState(false);
+  const [showSplash, setShowSplash] = useState(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+    return window.localStorage.getItem(SPLASH_SEEN_STORAGE_KEY) !== "true";
+  });
   const socketRef = useRef<ReturnType<typeof createSocketConnection> | null>(null);
+
+  function dismissSplash() {
+    setShowSplash(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SPLASH_SEEN_STORAGE_KEY, "true");
+    }
+  }
 
   useEffect(() => {
     persistSavedPoses(savedPoses);
@@ -254,8 +269,12 @@ export function SaboteurPage() {
         padding: "1rem 0"
       }}
     >
-      <div className="page-heading">
+      {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
+      <div className="page-heading" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
         <h1>Saboteur Screen</h1>
+        <button className="secondary-action" type="button" onClick={() => setShowSplash(true)}>
+          Replay Intro
+        </button>
       </div>
       <div
         className="split-layout"
