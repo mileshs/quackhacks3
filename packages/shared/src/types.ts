@@ -1,4 +1,19 @@
-export type PlayerRole = "athlete" | "saboteur";
+import type { PowerupActivatePayload, RoundSnapshotPayload } from "./powerups.js";
+
+export enum GameRole {
+  Dummy = "dummy",
+  Saboteur = "saboteur"
+}
+
+export type RoleClaimStatus = "empty" | "occupied";
+
+export type RoleClaim = {
+  status: RoleClaimStatus;
+  lastSeenAt: string | null;
+  ready: boolean;
+};
+
+export type GamePhase = "idle" | "waiting" | "countdown" | "playing";
 
 export type JointName =
   | "head"
@@ -34,3 +49,35 @@ export type RealtimePoseMessage = {
   pose: UniversalPose;
   sentAt: string;
 };
+
+export type ActiveGameState = {
+  activeGame: boolean;
+  gameId: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  endReason: "manual" | "role-disconnected" | "role-timeout" | null;
+  phase: GamePhase;
+  countdownStartedAt: string | null;
+  updatedAt: string;
+  playerCount: number;
+  roles: Record<GameRole, RoleClaim>;
+};
+
+export type GameClientMessage =
+  | { type: "game:start" }
+  | { type: "game:end" }
+  | { type: "game:dev-start" }
+  | { type: "role:claim"; role: GameRole }
+  | { type: "role:heartbeat"; role: GameRole }
+  | { type: "role:ready"; role: GameRole; ready: boolean }
+  | { type: "pose:update"; pose: UniversalPose }
+  | { type: "round:snapshot"; payload: RoundSnapshotPayload }
+  | { type: "powerup:activate"; payload: PowerupActivatePayload };
+
+export type GameServerMessage =
+  | { type: "game:state"; state: ActiveGameState }
+  | { type: "role:accepted"; role: GameRole }
+  | { type: "role:rejected"; role: GameRole; reason: "taken" | "inactive-game" | "invalid-role" }
+  | { type: "round:snapshot"; payload: RoundSnapshotPayload; sentAt: string }
+  | { type: "powerup:activate"; payload: PowerupActivatePayload; sentAt: string }
+  | { type: "error"; error: string };

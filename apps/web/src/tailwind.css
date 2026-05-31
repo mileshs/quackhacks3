@@ -19,6 +19,18 @@
         0 10px 28px rgba(255, 175, 9, 0.35);
     }
   }
+
+  @keyframes countdown-pop {
+    from {
+      transform: scale(0.94) rotate(-1deg);
+      filter: brightness(0.96);
+    }
+
+    to {
+      transform: scale(1.06) rotate(1deg);
+      filter: brightness(1.06);
+    }
+  }
 }
 
 /* ===== Saboteur splash screen ===== */

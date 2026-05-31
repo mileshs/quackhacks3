@@ -1,16 +1,49 @@
-import { io, type Socket } from "socket.io-client";
+import type { GameClientMessage, GameServerMessage, RealtimePoseMessage } from "@quackhacks/shared";
 
-export function createSocketConnection(): Socket {
-  const origin = import.meta.env.VITE_SOCKET_URL ?? window.location.origin;
-
-  return io(origin, {
-    path: "/socket.io"
-  });
-}
+export type GameSocketMessage = GameServerMessage | RealtimePoseMessage;
 
 export function createHonoWebSocket() {
+  return createGameWebSocket();
+}
+
+export function createGameWebSocket() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const host = import.meta.env.VITE_WS_HOST ?? window.location.host;
 
   return new WebSocket(`${protocol}://${host}/ws`);
+}
+
+export function sendGameSocketMessage(socket: WebSocket | null, message: GameClientMessage) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return false;
+  }
+
+  socket.send(JSON.stringify(message));
+  return true;
+}
+
+export function parseGameSocketMessage(rawMessage: MessageEvent["data"]): GameSocketMessage | null {
+  if (typeof rawMessage !== "string") {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawMessage) as GameSocketMessage;
+
+    if (
+      parsed.type === "game:state" ||
+      parsed.type === "pose:update" ||
+      parsed.type === "round:snapshot" ||
+      parsed.type === "powerup:activate" ||
+      parsed.type === "role:accepted" ||
+      parsed.type === "role:rejected" ||
+      parsed.type === "error"
+    ) {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
