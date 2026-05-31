@@ -25,7 +25,20 @@ import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
-import { cx, pillDanger, saboteurCard, saboteurJointHandleClass, saboteurPageBg, saboteurPillSecondary, saboteurStage, saboteurStageBoundsRect, saboteurStageFloorLine, saboteurTorsoHandleIcon, saboteurViewport } from "../lib/ui";
+import { SKELETON_ADJUSTMENT_SOUNDS, useSound } from "../providers/SoundProvider";
+import {
+  cx,
+  pillDanger,
+  saboteurCard,
+  saboteurJointHandleClass,
+  saboteurPageBg,
+  saboteurPillSecondary,
+  saboteurStage,
+  saboteurStageBoundsRect,
+  saboteurStageFloorLine,
+  saboteurTorsoHandleIcon,
+  saboteurViewport
+} from "../lib/ui";
 
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 const JOINT_HANDLE_RADIUS = 10;
@@ -761,10 +774,12 @@ function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
 }
 
 function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
+  const { playExclusiveRandomSoundEffect, stopExclusiveSoundEffect } = useSound();
   const svgRef = useRef<SVGSVGElement>(null);
   const latestPoseRef = useRef(pose);
   const wriggleBaseRef = useRef<UniversalPose | null>(null);
   const bodyDragRef = useRef<{ lastX: number; lastY: number } | null>(null);
+  const adjustmentDragActiveRef = useRef(false);
   const [activeJoint, setActiveJoint] = useState<JointName | null>(null);
   const [isWriggling, setIsWriggling] = useState(false);
   const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
@@ -773,6 +788,22 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
   useEffect(() => {
     latestPoseRef.current = pose;
   }, [pose]);
+
+  useEffect(() => {
+    return () => {
+      adjustmentDragActiveRef.current = false;
+      stopExclusiveSoundEffect();
+    };
+  }, [stopExclusiveSoundEffect]);
+
+  function notifyJointAdjustment() {
+    playExclusiveRandomSoundEffect(SKELETON_ADJUSTMENT_SOUNDS, () => adjustmentDragActiveRef.current);
+  }
+
+  function stopAdjustmentSound() {
+    adjustmentDragActiveRef.current = false;
+    stopExclusiveSoundEffect();
+  }
 
   useEffect(() => {
     if (!isWriggling) {
@@ -821,6 +852,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
 
       const base = wriggleBaseRef.current ?? latestPoseRef.current;
       wriggleBaseRef.current = translatePoseBy(base, dx, dy);
+      notifyJointAdjustment();
       return;
     }
 
@@ -831,9 +863,11 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
     const nextPose = rotateJointTowardPoint(latestPoseRef.current, activeJoint, point.x, point.y);
     latestPoseRef.current = nextPose;
     onChange(nextPose);
+    notifyJointAdjustment();
   }
 
   function stopPointerAction() {
+    stopAdjustmentSound();
     setActiveJoint(null);
     setIsWriggling(false);
     bodyDragRef.current = null;
@@ -869,6 +903,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
           onPointerDown={(event) => {
             event.stopPropagation();
             event.currentTarget.setPointerCapture(event.pointerId);
+            adjustmentDragActiveRef.current = true;
             setActiveJoint(null);
             const point = getPosePoint(event, svgRef.current);
             wriggleBaseRef.current = latestPoseRef.current;
@@ -885,6 +920,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
             onPointerDown={(event) => {
               event.stopPropagation();
               event.currentTarget.setPointerCapture(event.pointerId);
+              adjustmentDragActiveRef.current = true;
               setIsWriggling(false);
               setActiveJoint(joint.name);
             }}

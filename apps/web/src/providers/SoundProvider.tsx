@@ -13,6 +13,14 @@ const legacyVolumeStorageKey = "quackhacks.volume";
 const soundtrackVolumeStorageKey = "poses.soundtrackVolume";
 const soundEffectsVolumeStorageKey = "poses.soundEffectsVolume";
 
+export const SKELETON_ADJUSTMENT_SOUNDS = [
+  "skeletonAdjustment1",
+  "skeletonAdjustment2",
+  "skeletonAdjustment3",
+  "skeletonAdjustment4",
+  "skeletonAdjustment5",
+] as const satisfies readonly SoundEffectId[];
+
 type TempoState = {
   beat: number;
   bpm: number;
@@ -26,6 +34,8 @@ type SoundContextValue = {
   setSoundtrackVolume: (volume: number) => void;
   setSoundEffectsVolume: (volume: number) => void;
   playSoundEffect: (id: SoundEffectId) => void;
+  playExclusiveRandomSoundEffect: (candidates: readonly SoundEffectId[], shouldReplay?: () => boolean) => void;
+  stopExclusiveSoundEffect: () => void;
   playSoundtrack: (id: SoundtrackId) => void;
   stopSoundtrack: () => void;
   triggerTimeWarp: () => void;
@@ -63,6 +73,8 @@ function clampVolume(volume: number): number {
 export function SoundProvider({ children }: { children: ReactNode }) {
   const soundtrackRefs = useRef<Partial<Record<SoundtrackId, HTMLAudioElement>>>({});
   const soundEffectRefs = useRef<Partial<Record<SoundEffectId, HTMLAudioElement>>>({});
+  const exclusiveSfxRef = useRef<HTMLAudioElement | null>(null);
+  const exclusiveSfxEndedHandlerRef = useRef<(() => void) | null>(null);
   const timeWarpCancelRef = useRef<(() => void) | null>(null);
 
   const [soundtrackVolume, setSoundtrackVolumeState] = useState(() => readInitialVolume(soundtrackVolumeStorageKey));
@@ -153,6 +165,62 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     [getSoundEffect]
   );
 
+  const stopExclusiveSoundEffect = useCallback(() => {
+    const soundEffect = exclusiveSfxRef.current;
+    if (!soundEffect) {
+      return;
+    }
+
+    if (exclusiveSfxEndedHandlerRef.current) {
+      soundEffect.removeEventListener("ended", exclusiveSfxEndedHandlerRef.current);
+      exclusiveSfxEndedHandlerRef.current = null;
+    }
+
+    soundEffect.pause();
+    soundEffect.currentTime = 0;
+    exclusiveSfxRef.current = null;
+  }, []);
+
+  const playExclusiveRandomSoundEffect = useCallback(
+    (candidates: readonly SoundEffectId[], shouldReplay?: () => boolean) => {
+      if (candidates.length === 0) {
+        return;
+      }
+
+      const current = exclusiveSfxRef.current;
+      if (current && !current.paused && !current.ended) {
+        return;
+      }
+
+      const id = candidates[Math.floor(Math.random() * candidates.length)];
+      const soundEffect = getSoundEffect(id);
+      exclusiveSfxRef.current = soundEffect;
+
+      const onEnded = () => {
+        soundEffect.removeEventListener("ended", onEnded);
+        exclusiveSfxEndedHandlerRef.current = null;
+        if (exclusiveSfxRef.current === soundEffect) {
+          exclusiveSfxRef.current = null;
+        }
+
+        if (shouldReplay?.()) {
+          queueMicrotask(() => {
+            playExclusiveRandomSoundEffect(candidates, shouldReplay);
+          });
+        }
+      };
+
+      exclusiveSfxEndedHandlerRef.current = onEnded;
+      soundEffect.addEventListener("ended", onEnded);
+      soundEffect.currentTime = 0;
+      soundEffect.play().catch((err) => {
+        console.warn("Sound effect playback blocked or failed:", err);
+        onEnded();
+      });
+    },
+    [getSoundEffect]
+  );
+
   const triggerTimeWarp = useCallback(() => {
     timeWarpCancelRef.current?.();
     timeWarpCancelRef.current = null;
@@ -222,6 +290,8 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       setSoundtrackVolume,
       setSoundEffectsVolume,
       playSoundEffect,
+      playExclusiveRandomSoundEffect,
+      stopExclusiveSoundEffect,
       playSoundtrack,
       stopSoundtrack,
       triggerTimeWarp,
@@ -235,6 +305,8 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       setSoundtrackVolume,
       setSoundEffectsVolume,
       playSoundEffect,
+      playExclusiveRandomSoundEffect,
+      stopExclusiveSoundEffect,
       playSoundtrack,
       stopSoundtrack,
       triggerTimeWarp,
