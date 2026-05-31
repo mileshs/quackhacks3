@@ -111,11 +111,184 @@ const HOLE_SCALE = 0.8;
 
 type Region = { x0: number; y0: number; w: number; h: number };
 
+type RectMetrics = { left: number; top: number; width: number; height: number };
+
+type PoseDebugInfo = {
+  canvas: {
+    width: number;
+    height: number;
+    css: RectMetrics;
+    coverScale: number;
+    coverOffsetX: number;
+    coverOffsetY: number;
+  };
+  p5Canvas: {
+    width: number;
+    height: number;
+    css: RectMetrics;
+    deltaLeft: number;
+    deltaTop: number;
+    deltaWidth: number;
+    deltaHeight: number;
+  } | null;
+  rawHipX: number | null;
+  mirroredHipX: number | null;
+  playerBoxX: number | null;
+  preAnchorHipX: number | null;
+  dummyHipX: number | null;
+  targetHipX: number | null;
+  dxBox: number | null;
+  screenX: {
+    stageCenter: number;
+    holeCenter: number;
+    measuredHip: number | null;
+    targetHip: number | null;
+    dummyHip: number | null;
+  };
+  linePct: {
+    stageCenter: number;
+    holeCenter: number;
+    measuredHip: number | null;
+    targetHip: number | null;
+    dummyHip: number | null;
+  };
+  deltas: {
+    measuredMinusCenter: number | null;
+    dummyMinusMeasured: number | null;
+    dummyMinusHoleCenter: number | null;
+  };
+};
+
 /** Centered portrait region shared by the hole overlay and the dummy. */
 function holeRegion(width: number, height: number): Region {
   const h = height * HOLE_SCALE;
   const w = h * HOLE_ASPECT;
   return { x0: (width - w) / 2, y0: (height - h) / 2, w, h };
+}
+
+function finiteOrNull(value: number | null | undefined): number | null {
+  return value !== null && value !== undefined && Number.isFinite(value) ? value : null;
+}
+
+function rectMetrics(rect: DOMRect): RectMetrics {
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height
+  };
+}
+
+function getHipX(pose: UniversalPose | null): number | null {
+  return finiteOrNull(pose?.joints.find((joint) => joint.name === "hips")?.x);
+}
+
+function buildPoseDebugInfo(
+  canvas: HTMLCanvasElement,
+  dummyMount: HTMLDivElement | null,
+  hipFrameX: number | null,
+  preAnchorPose: UniversalPose | null,
+  dummyPose: UniversalPose | null,
+  target: UniversalPose
+): PoseDebugInfo {
+  const width = canvas.width;
+  const height = canvas.height;
+  const region = holeRegion(width, height);
+  const canvasCss = rectMetrics(canvas.getBoundingClientRect());
+  const p5Canvas = dummyMount?.querySelector("canvas") ?? null;
+  const p5Css = p5Canvas ? rectMetrics(p5Canvas.getBoundingClientRect()) : null;
+
+  const coverScale =
+    width > 0 && height > 0
+      ? Math.max(canvasCss.width / width, canvasCss.height / height)
+      : 1;
+  const coverOffsetX = (canvasCss.width - width * coverScale) / 2;
+  const coverOffsetY = (canvasCss.height - height * coverScale) / 2;
+  const toDisplayedPct = (canvasX: number | null) =>
+    canvasX === null || canvasCss.width <= 0
+      ? null
+      : ((coverOffsetX + canvasX * coverScale) / canvasCss.width) * 100;
+
+  const mirroredHipX = hipFrameX === null ? null : 1 - hipFrameX;
+  const measuredHipScreenX = mirroredHipX === null ? null : mirroredHipX * width;
+  const playerBoxX =
+    hipFrameX === null || !(region.w > 0)
+      ? null
+      : ((1 - hipFrameX) * width - region.x0) / region.w;
+  const preAnchorHipX = getHipX(preAnchorPose);
+  const dummyHipX = getHipX(dummyPose);
+  const targetHipX = getHipX(target);
+  const boxToScreenX = (boxX: number | null) => (boxX === null ? null : region.x0 + boxX * region.w);
+  const stageCenter = width / 2;
+  const holeCenter = region.x0 + region.w / 2;
+  const targetHipScreenX = boxToScreenX(targetHipX);
+  const dummyHipScreenX = boxToScreenX(dummyHipX);
+
+  return {
+    canvas: {
+      width,
+      height,
+      css: canvasCss,
+      coverScale,
+      coverOffsetX,
+      coverOffsetY
+    },
+    p5Canvas: p5Canvas && p5Css
+      ? {
+          width: p5Canvas.width,
+          height: p5Canvas.height,
+          css: p5Css,
+          deltaLeft: p5Css.left - canvasCss.left,
+          deltaTop: p5Css.top - canvasCss.top,
+          deltaWidth: p5Css.width - canvasCss.width,
+          deltaHeight: p5Css.height - canvasCss.height
+        }
+      : null,
+    rawHipX: finiteOrNull(hipFrameX),
+    mirroredHipX: finiteOrNull(mirroredHipX),
+    playerBoxX: finiteOrNull(playerBoxX),
+    preAnchorHipX,
+    dummyHipX,
+    targetHipX,
+    dxBox: preAnchorHipX === null || dummyHipX === null ? null : dummyHipX - preAnchorHipX,
+    screenX: {
+      stageCenter,
+      holeCenter,
+      measuredHip: measuredHipScreenX,
+      targetHip: targetHipScreenX,
+      dummyHip: dummyHipScreenX
+    },
+    linePct: {
+      stageCenter: toDisplayedPct(stageCenter) ?? 50,
+      holeCenter: toDisplayedPct(holeCenter) ?? 50,
+      measuredHip: toDisplayedPct(measuredHipScreenX),
+      targetHip: toDisplayedPct(targetHipScreenX),
+      dummyHip: toDisplayedPct(dummyHipScreenX)
+    },
+    deltas: {
+      measuredMinusCenter: measuredHipScreenX === null ? null : measuredHipScreenX - stageCenter,
+      dummyMinusMeasured:
+        dummyHipScreenX === null || measuredHipScreenX === null ? null : dummyHipScreenX - measuredHipScreenX,
+      dummyMinusHoleCenter: dummyHipScreenX === null ? null : dummyHipScreenX - holeCenter
+    }
+  };
+}
+
+function syncDummyCanvasCss(mount: HTMLDivElement | null) {
+  const canvas = mount?.querySelector("canvas");
+  if (!canvas) {
+    return;
+  }
+
+  // p5 writes inline pixel dimensions (for example width: 1280px), which beat
+  // Tailwind's w-full/h-full classes and make the WebGL dummy canvas narrower than
+  // the 2D hole canvas. Force the overlay box to match the parent every frame.
+  canvas.style.position = "absolute";
+  canvas.style.inset = "0";
+  canvas.style.display = "block";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.objectFit = "cover";
 }
 
 /** Lowest ankle y (largest value = closest to the floor) of a pose, or null if none. */
@@ -132,12 +305,9 @@ function lowestAnkleY(pose: UniversalPose): number | null {
  *  • vertically, plant the lowest foot on the hole's floor (one foot always on the ground).
  *
  * `retargetPose` rebuilds the player with the target's bone lengths but pins the result at
- * the target's hips, so the scored pose was always centered on the hole no matter where the
- * player stood — that's why standing to the side scored the same as standing inside it. By
- * translating the rigid pose onto the player's real location, `comparePoses` (which is
- * position-based) now penalizes horizontal drift and floor mismatch directly, with no
- * separate fudge factor. Angles/bone-lengths are untouched, so a correctly-angled pose
- * standing in the right spot still lands exactly on the hole and scores 100.
+ * the target's hips. Translating that rigid pose onto the player's real location makes the
+ * rendered body and the silhouette-containment score respond to walking left/right instead
+ * of pretending the player is always centered in the hole.
  *
  * `hipFrameX` is the player's raw (un-mirrored) hip-center in frame units.
  */
@@ -179,9 +349,15 @@ function frameGuidance(landmarks: PoseFrame["landmarks"]): string | null {
   if (!landmarks) {
     return "Step into frame";
   }
+  const minVisibility = 0.3;
+  const edgeMargin = 0.06;
+  const minBodyHeight = 0.36;
+  const visibleEnough = (lm: NonNullable<PoseFrame["landmarks"]>[number] | undefined) =>
+    Boolean(lm && (lm.visibility ?? 1) >= minVisibility);
+
   const key = [0, 11, 12, 23, 24, 25, 26, 27, 28]
     .map((i) => landmarks[i])
-    .filter((lm): lm is NonNullable<typeof lm> => Boolean(lm));
+    .filter((lm): lm is NonNullable<typeof lm> => visibleEnough(lm));
   if (key.length < 6) {
     return "Step into frame";
   }
@@ -193,27 +369,28 @@ function frameGuidance(landmarks: PoseFrame["landmarks"]): string | null {
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
 
+  const lowerBodyPoints = [landmarks[25], landmarks[26], landmarks[27], landmarks[28]].filter(visibleEnough);
   const ankles = [landmarks[27], landmarks[28]];
-  const feetShown = ankles.some((a) => a && (a.visibility ?? 1) > 0.5 && a.y < 0.99);
+  const feetShown = ankles.some((ankle) => visibleEnough(ankle) && (ankle?.y ?? Infinity) <= 1 + edgeMargin);
   const head = landmarks[0];
 
   // Mirror the horizontal axis to match what the player sees on screen.
   const dispMinX = 1 - maxX;
   const dispMaxX = 1 - minX;
 
-  if (maxY > 0.99 || !feetShown) {
+  if (!feetShown && (lowerBodyPoints.length < 3 || maxY > 1 - edgeMargin)) {
     return "Step back so your feet show";
   }
-  if (head && head.y < 0.02) {
+  if (visibleEnough(head) && head!.y < -edgeMargin) {
     return "Step back";
   }
-  if (dispMaxX > 0.97) {
+  if (dispMaxX > 1 + edgeMargin) {
     return "Step left";
   }
-  if (dispMinX < 0.03) {
+  if (dispMinX < -edgeMargin) {
     return "Step right";
   }
-  if (maxY - minY < 0.45) {
+  if (maxY - minY < minBodyHeight) {
     return "Step closer";
   }
   return null;
@@ -337,12 +514,13 @@ export function AthleteStage({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDummy, setShowDummy] = useState(true);
   const [guidance, setGuidance] = useState<string | null>(null);
-  // Temporary dev affordance: when on, the game never pauses for framing and the dummy
-  // tracks the raw live pose instead of being retargeted/anchored onto the hole. Lets
-  // you develop the UI with only your face/shoulders in frame.
+  const [debugInfo, setDebugInfo] = useState<PoseDebugInfo | null>(null);
+  // Temporary dev affordance: when on, the game never pauses for framing, but the dummy
+  // still anchors to the player's real frame position so walking left/right can be tested.
   const [devMode, setDevMode] = useState(false);
   const lastHandUpdate = useRef(0);
   const lastSpotlightUpdate = useRef(0);
+  const lastDebugUpdate = useRef(0);
   const powerupTimerRef = useRef<number | null>(null);
   const [activePowerup, setActivePowerup] = useState<SaboteurPowerupKind | null>(null);
   const [spotlightPct, setSpotlightPct] = useState({ x: 50, y: 55 });
@@ -370,6 +548,7 @@ export function AthleteStage({
       setRunning(false);
       setStatus("Stopped");
       setGuidance(null);
+      setDebugInfo(null);
     }
   }, []);
 
@@ -420,6 +599,7 @@ export function AthleteStage({
         p.setup = () => {
           const source = canvasRef.current;
           p.createCanvas(source?.width || 1280, source?.height || 720, p.WEBGL);
+          syncDummyCanvasCss(dummyMountRef.current);
           p.noStroke();
         };
         p.draw = () => {
@@ -428,6 +608,7 @@ export function AthleteStage({
           if (source && (source.width !== p.width || source.height !== p.height)) {
             p.resizeCanvas(source.width, source.height);
           }
+          syncDummyCanvasCss(dummyMountRef.current);
           p.clear();
           const data = dummyRenderRef.current;
           if (!data || !showDummyRef.current) {
@@ -542,7 +723,9 @@ export function AthleteStage({
           // proportion-independent. The player's real frame position drives where the dummy
           // sits, so the SAME pose drives both the drawn dummy and the score.
           const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
-          const live = landmarks ? landmarksToUniversalPose(landmarks, aspect, { mirror: true }) : null;
+          const live = landmarks
+            ? landmarksToUniversalPose(landmarks, aspect, { mirror: true, minVisibility: 0.3 })
+            : null;
 
           // Player's raw (un-mirrored) hip-center in frame units, used to place the dummy
           // at the player's actual horizontal location within the hole.
@@ -550,22 +733,16 @@ export function AthleteStage({
           const rHip = landmarks?.[24];
           const hipFrameX = lHip && rHip ? (lHip.x + rHip.x) / 2 : null;
 
-          // In dev mode the dummy follows the raw live pose so it never snaps/clips onto the
-          // hole. In normal play it's retargeted onto the hole's bone lengths, then anchored
-          // to the player's real position: shifted horizontally under them (so standing off
-          // to the side misses the hole and tanks the score) and planted on the floor (so a
-          // foot stays grounded and a squat drops the hips instead of flying to the top).
+          // Always retarget onto the hole's bone lengths before positioning. Dev mode only
+          // affects UI guidance; it must not change the geometry used for rendering/scoring.
           let dummyPose: UniversalPose | null = null;
+          let bodyPose: UniversalPose | null = null;
           if (live) {
-            if (devModeRef.current) {
-              dummyPose = live;
-            } else {
-              const retargeted = retargetPose(live, targetRef.current);
-              dummyPose =
-                hipFrameX !== null && ctx
-                  ? anchorDummyToPlayer(retargeted, targetRef.current, hipFrameX, ctx.canvas.width, ctx.canvas.height)
-                  : retargeted;
-            }
+            bodyPose = retargetPose(live, targetRef.current);
+            dummyPose =
+              hipFrameX !== null && ctx
+                ? anchorDummyToPlayer(bodyPose, targetRef.current, hipFrameX, ctx.canvas.width, ctx.canvas.height)
+                : bodyPose;
           }
 
           // Publish the pose for the p5 WEBGL dummy, and paint the 2D backdrop + hole.
@@ -580,10 +757,24 @@ export function AthleteStage({
             setGuidance(devModeRef.current ? null : frameGuidance(landmarks));
           }
 
+          if (ctx && now - lastDebugUpdate.current > 120) {
+            lastDebugUpdate.current = now;
+            setDebugInfo(
+              buildPoseDebugInfo(
+                ctx.canvas,
+                dummyMountRef.current,
+                hipFrameX,
+                bodyPose,
+                dummyPose,
+                targetRef.current
+              )
+            );
+          }
+
           if (dummyPose && now - lastMatchUpdate.current > 120) {
             lastMatchUpdate.current = now;
-            // The dummy now carries the player's real position, so the position-based match
-            // already accounts for horizontal drift and floor mismatch — no extra factor.
+            // Score the same positioned body that is rendered: percent of dummy silhouette
+            // inside the visible hole, so horizontal drift tanks the meter naturally.
             const percent = comparePoses(dummyPose, targetRef.current);
             setMatchPercent(percent);
             setBand(scoreBandFromMatch(percent));
@@ -618,9 +809,12 @@ export function AthleteStage({
             resolution + object-cover so the dummy lines up with the carved hole. */}
         <div
           ref={dummyMountRef}
-          className="pointer-events-none absolute inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
+          className="pointer-events-none absolute inset-0 [&>canvas]:absolute [&>canvas]:inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
         />
+        <PoseDebugGuide info={debugInfo} />
       </div>
+
+      <PoseDebugPanel info={debugInfo} />
 
       {activePowerup === "blindness" ? (
         <div
@@ -638,7 +832,7 @@ export function AthleteStage({
       ) : null}
 
       {/* TEMP dev toggle: sits above everything. In dev mode the game never pauses for
-          framing and the dummy tracks your raw pose instead of clipping to the hole. */}
+          framing while the dummy remains anchored to the player's real position. */}
       <button
         type="button"
         className={cx(
@@ -783,6 +977,14 @@ export function AthleteStage({
           >
             Dummy Overlay: {showDummy ? "On" : "Off"}
           </button>
+          <button
+            className={pillSecondary}
+            type="button"
+            disabled={!debugInfo}
+            onClick={() => console.info("pose alignment debug", debugInfo)}
+          >
+            Log Debug Snapshot
+          </button>
           <button className={pillSecondary} type="button" onClick={finishWall}>
             Finish Wall
           </button>
@@ -798,6 +1000,111 @@ export function AthleteStage({
           </Link>
         </div>
       </aside>
+    </div>
+  );
+}
+
+function debugValue(value: number | null | undefined, digits = 3) {
+  return value === null || value === undefined || !Number.isFinite(value) ? "..." : value.toFixed(digits);
+}
+
+function debugPixels(value: number | null | undefined) {
+  return value === null || value === undefined || !Number.isFinite(value) ? "..." : `${Math.round(value)}px`;
+}
+
+function DebugLine({
+  pct,
+  color,
+  label,
+  dashed = false
+}: {
+  pct: number | null;
+  color: string;
+  label: string;
+  dashed?: boolean;
+}) {
+  if (pct === null || !Number.isFinite(pct)) {
+    return null;
+  }
+
+  return (
+    <div
+      className={cx(
+        "absolute top-0 bottom-0 z-10 w-0 border-l-2",
+        dashed && "border-dashed"
+      )}
+      style={{ left: `${pct}%`, borderColor: color }}
+    >
+      <span
+        className="absolute top-2 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap uppercase text-white"
+        style={{ color }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function PoseDebugGuide({ info }: { info: PoseDebugInfo | null }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-40">
+      <DebugLine pct={50} color="rgba(255,255,255,0.78)" label="stage 50%" dashed />
+      {info ? (
+        <>
+          <DebugLine pct={info.linePct.holeCenter} color="#ffd84d" label="hole center" dashed />
+          <DebugLine pct={info.linePct.targetHip} color="#ff65c8" label="target hips" />
+          <DebugLine pct={info.linePct.measuredHip} color="#62e6ff" label="mp hips" />
+          <DebugLine pct={info.linePct.dummyHip} color="#57ff77" label="dummy hips" />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function DebugRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-white/58">{label}</span>
+      <span className="font-black text-white">{value}</span>
+    </div>
+  );
+}
+
+function PoseDebugPanel({ info }: { info: PoseDebugInfo | null }) {
+  return (
+    <div className="pointer-events-none absolute bottom-4 left-1/2 z-50 w-[min(680px,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-white/20 bg-black/72 px-4 py-3 font-mono text-[11px] text-white shadow-[0_12px_32px_rgba(0,0,0,0.38)] backdrop-blur">
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-black uppercase tracking-[0.12em]">
+        <span className="text-[#57ff77]">Pose Alignment Debug</span>
+        <span className="text-[#62e6ff]">cyan: MediaPipe hips</span>
+        <span className="text-[#57ff77]">green: dummy hips</span>
+        <span className="text-[#ff65c8]">pink: target hips</span>
+      </div>
+
+      {info ? (
+        <div className="grid gap-x-8 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+          <DebugRow label="raw hip x" value={debugValue(info.rawHipX)} />
+          <DebugRow label="mirrored hip x" value={debugValue(info.mirroredHipX)} />
+          <DebugRow label="player box x" value={debugValue(info.playerBoxX)} />
+          <DebugRow label="pre-anchor hip x" value={debugValue(info.preAnchorHipX)} />
+          <DebugRow label="dummy hip x" value={debugValue(info.dummyHipX)} />
+          <DebugRow label="target hip x" value={debugValue(info.targetHipX)} />
+          <DebugRow label="anchor dx box" value={debugValue(info.dxBox)} />
+          <DebugRow label="mp hip vs center" value={debugPixels(info.deltas.measuredMinusCenter)} />
+          <DebugRow label="dummy vs mp hip" value={debugPixels(info.deltas.dummyMinusMeasured)} />
+          <DebugRow label="dummy vs hole" value={debugPixels(info.deltas.dummyMinusHoleCenter)} />
+          <DebugRow label="2d canvas" value={`${Math.round(info.canvas.css.width)}x${Math.round(info.canvas.css.height)}`} />
+          <DebugRow
+            label="p5 delta"
+            value={
+              info.p5Canvas
+                ? `${debugPixels(info.p5Canvas.deltaLeft)}, ${debugPixels(info.p5Canvas.deltaWidth)}w`
+                : "..."
+            }
+          />
+        </div>
+      ) : (
+        <div className="text-white/70">Waiting for pose frames...</div>
+      )}
     </div>
   );
 }
