@@ -745,7 +745,7 @@ function drawDummy(
 /**
  * Solid bright-yellow wall with a human-shaped hole punched clear. The area AROUND the
  * pose is opaque; the pose silhouette is left blank so the live camera shows through
- * it (the "hole in the wall" the athlete fits into). Also draws the floor line.
+ * it (the "hole in the wall" the athlete fits into).
  */
 function drawHoleOverlay(
   ctx: CanvasRenderingContext2D,
