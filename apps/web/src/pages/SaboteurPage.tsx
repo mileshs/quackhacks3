@@ -43,7 +43,6 @@ import {
 import { useActiveGame } from "../lib/useActiveGame";
 import { useGameTempo } from "../lib/tempo";
 
-const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 const JOINT_HANDLE_RADIUS = 10;
 
 const GROUND_Y = 0.94;
@@ -222,12 +221,7 @@ export function SaboteurPage() {
   const [queue, setQueue] = useState<UniversalPose[]>([]);
   const tempo = useGameTempo();
   const lastFedCycleRef = useRef<number | null>(null);
-  const [showSplash, setShowSplash] = useState(() => {
-    if (typeof window === "undefined") {
-      return true;
-    }
-    return window.localStorage.getItem(SPLASH_SEEN_STORAGE_KEY) !== "true";
-  });
+  const [showSplash, setShowSplash] = useState(true);
   const [tutorialRun, setTutorialRun] = useState(0);
   const [powerupProgress, setPowerupProgress] = useState<SaboteurPowerupProgress>({
     inventory: [],
@@ -237,9 +231,6 @@ export function SaboteurPage() {
 
   function dismissSplash() {
     setShowSplash(false);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(SPLASH_SEEN_STORAGE_KEY, "true");
-    }
   }
 
   // The navbar is hidden on this page unless the dev toggle turns it on; restore it on unmount.
@@ -471,10 +462,11 @@ export function SaboteurPage() {
   const socketReady = /ready|connected/i.test(socketStatus);
 
   return (
-    <RoleGameShell role={GameRole.Saboteur} controls={gameControls}>
+    <>
+      {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
+      <RoleGameShell role={GameRole.Saboteur} controls={gameControls}>
       <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
       <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
-      {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)] lg:items-stretch">
         <div className="flex min-h-0 flex-col gap-3">
@@ -570,8 +562,9 @@ export function SaboteurPage() {
         </aside>
       </div>
     </section>
+      </RoleGameShell>
       <SaboteurTutorialOverlay runKey={tutorialRun} splashOpen={showSplash} />
-    </RoleGameShell>
+    </>
   );
 }
 

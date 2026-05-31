@@ -8,8 +8,6 @@ import { useGameTempo } from "../lib/tempo";
 import { secondaryAction } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
 
-const DUMMY_SPLASH_SEEN_KEY = "quackhacks:dummy:splashSeen";
-
 export function PoseTestPage() {
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
   const [previewPose, setPreviewPose] = useState<UniversalPose | null>(null);
@@ -17,12 +15,7 @@ export function PoseTestPage() {
   const gameControls = useActiveGame();
   const { game, lastPose, lastPowerup, sendRoundSnapshot } = gameControls;
   const tempo = useGameTempo();
-  const [showSplash, setShowSplash] = useState(() => {
-    if (typeof window === "undefined") {
-      return true;
-    }
-    return window.localStorage.getItem(DUMMY_SPLASH_SEEN_KEY) !== "true";
-  });
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     const refresh = () => setSavedPoses(loadSavedPoses());
@@ -52,29 +45,28 @@ export function PoseTestPage() {
 
   function dismissSplash() {
     setShowSplash(false);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(DUMMY_SPLASH_SEEN_KEY, "true");
-    }
   }
 
   return (
-    <RoleGameShell role={GameRole.Dummy} controls={gameControls}>
+    <>
       {showSplash ? <DummySplash onDismiss={dismissSplash} /> : null}
-      <div className="absolute top-18 right-4 z-10">
-        <button className={secondaryAction} type="button" onClick={() => setShowSplash(true)}>
-          Replay Intro
-        </button>
-      </div>
-      <AthleteStage
-        targetPose={targetPose}
-        poseOptions={poseOptions}
-        savedPoseIds={savedPoses.map((pose) => pose.id)}
-        selectedPoseId={targetPose.id}
-        onSelectPose={(pose) => setSelectedId(pose.id)}
-        powerupActivation={lastPowerup}
-        onFinishWall={sendRoundSnapshot}
-        tempo={tempo}
-      />
-    </RoleGameShell>
+      <RoleGameShell role={GameRole.Dummy} controls={gameControls}>
+        <div className="absolute top-18 right-4 z-10">
+          <button className={secondaryAction} type="button" onClick={() => setShowSplash(true)}>
+            Replay Intro
+          </button>
+        </div>
+        <AthleteStage
+          targetPose={targetPose}
+          poseOptions={poseOptions}
+          savedPoseIds={savedPoses.map((pose) => pose.id)}
+          selectedPoseId={targetPose.id}
+          onSelectPose={(pose) => setSelectedId(pose.id)}
+          powerupActivation={lastPowerup}
+          onFinishWall={sendRoundSnapshot}
+          tempo={tempo}
+        />
+      </RoleGameShell>
+    </>
   );
 }
