@@ -24,6 +24,7 @@ import {
 } from "../lib/poseTracker";
 import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dummy3d";
 import { useDevSection, useSettings } from "../lib/settings";
+import { type TempoState } from "../lib/tempo";
 import { cx } from "../lib/ui";
 
 // ── "Poses for Dummies" HUD palette ──────────────────────────────────────────
@@ -94,6 +95,8 @@ type AthleteStageProps = {
   onSelectPose?: (pose: UniversalPose) => void;
   powerupActivation?: PowerupActivatePayload | null;
   onFinishWall?: (payload: RoundSnapshotPayload) => void;
+  /** Synced 8-count phase; null when the game isn't in the playing phase. */
+  tempo?: TempoState | null;
 };
 
 // The hole keeps a human portrait shape (not stretched to the camera's aspect): a
@@ -248,13 +251,36 @@ export function AthleteStage({
   selectedPoseId,
   onSelectPose,
   powerupActivation,
-  onFinishWall
+  onFinishWall,
+  tempo
 }: AthleteStageProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopLoopRef = useRef<(() => void) | null>(null);
   const lastMatchUpdate = useRef(0);
+
+  // Tempo phase drives the dummy's behavior: rest = dim + wait, pose = track/score,
+  // snapshot = freeze + flash. The detect loop reads it through a ref.
+  const tempoPhase = tempo?.phase ?? null;
+  const tempoPhaseRef = useRef(tempoPhase);
+  tempoPhaseRef.current = tempoPhase;
+  // Brief snapshot flash, and a guard so the count-8 score fires once per cycle.
+  const [flash, setFlash] = useState(false);
+  const lastSnapshotCycleRef = useRef<number | null>(null);
+
+  // On the count-8 snapshot beat: record the score once and trigger the flash.
+  useEffect(() => {
+    if (tempo?.phase !== "snapshot" || tempo.cycle === lastSnapshotCycleRef.current) {
+      return;
+    }
+    lastSnapshotCycleRef.current = tempo.cycle;
+    finishWall();
+    setFlash(true);
+    const id = window.setTimeout(() => setFlash(false), 220);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tempo?.phase, tempo?.cycle]);
 
   // The dummy is rendered on a separate p5.js WEBGL canvas overlaid on the 2D one. The
   // detect loop publishes the latest pose here and the p5 draw loop reads it.
@@ -491,8 +517,17 @@ export function AthleteStage({
           const rHip = landmarks?.[24];
           const hipFrameX = lHip && rHip ? (lHip.x + rHip.x) / 2 : null;
 
+          // Tempo gating: on the "snapshot" beat the dummy + score freeze (hold the last
+          // pose-phase frame). Scoring only happens during the "pose" beats; when there's
+          // no tempo (e.g. standalone/dev) everything runs normally.
+          const phase = tempoPhaseRef.current;
+          const frozen = phase === "snapshot";
+          const scoring = !phase || phase === "pose";
+
           // Publish the pose for the p5 WEBGL dummy, and paint the 2D backdrop + hole.
-          dummyRenderRef.current = dummyPose ? { pose: dummyPose, handClosed, hipFrameX } : null;
+          if (!frozen) {
+            dummyRenderRef.current = dummyPose ? { pose: dummyPose, handClosed, hipFrameX } : null;
+          }
           if (ctx) {
             drawFrame(ctx, targetRef.current);
           }
@@ -503,7 +538,7 @@ export function AthleteStage({
             setGuidance(devModeRef.current ? null : frameGuidance(landmarks));
           }
 
-          if (dummyPose && now - lastMatchUpdate.current > 120) {
+          if (dummyPose && scoring && now - lastMatchUpdate.current > 120) {
             lastMatchUpdate.current = now;
             const percent = comparePoses(dummyPose, targetRef.current);
             setMatchPercent(percent);
@@ -659,6 +694,24 @@ export function AthleteStage({
           <span className="px-6 text-[clamp(2.2rem,6vw,4.5rem)] font-black tracking-[0.01em] [text-shadow:0_2px_18px_rgba(0,0,0,0.7)]">{guidance}</span>
         </div>
       )}
+
+      {/* Tempo rest phase (counts 1-4): dim the stage and tell the dummy to wait. The pose
+          is revealed when this lifts at count 5. */}
+      {running && tempoPhase === "rest" && (
+        <div className="pointer-events-none absolute inset-0 z-44 flex flex-col items-center justify-center gap-3 bg-[#05080c]/90 text-center backdrop-blur-sm">
+          <span className="text-sm font-extrabold tracking-[0.2em] text-[#ffd65c] uppercase">Rest</span>
+          <span className="px-6 text-[clamp(1.8rem,5vw,3.2rem)] font-black text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.7)]">
+            Wait for the saboteur…
+          </span>
+        </div>
+      )}
+
+      {/* Snapshot flash (count 8): a quick, low-key white pulse over the frozen frame. */}
+      <div
+        className="pointer-events-none absolute inset-0 z-47 bg-white transition-opacity duration-200"
+        style={{ opacity: flash ? 0.4 : 0 }}
+        aria-hidden="true"
+      />
 
       {/* Fullscreen toggle, bottom-right circular button. */}
       <button

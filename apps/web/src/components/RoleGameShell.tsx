@@ -3,7 +3,9 @@ import { GameRole } from "@quackhacks/shared";
 import { useNavigate } from "react-router-dom";
 import { queueGameNotice } from "../lib/gameNotifications";
 import { useDevSection } from "../lib/settings";
+import { useTempo } from "../lib/tempo";
 import { cx } from "../lib/ui";
+import { TempoIndicator } from "./TempoIndicator";
 import type { useActiveGame } from "../lib/useActiveGame";
 
 // Buttons inside the cream Settings dropdown (dark text on light surfaces).
@@ -60,6 +62,8 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
   const selfReady = selfClaim?.ready ?? false;
   const otherReady = otherClaim?.ready ?? false;
   const playing = devSolo || game?.phase === "playing";
+  // Synced 8-count, derived from the server's shared play-start anchor (null until playing).
+  const tempo = useTempo(game?.playingStartedAt ?? null);
   const countdownSeconds = useMemo(() => {
     if (game?.phase !== "countdown" || !game.countdownStartedAt) {
       return null;
@@ -188,6 +192,8 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
       </div>
 
       {overlay}
+
+      {playing ? <TempoIndicator tempo={tempo} /> : null}
 
       {confirmEndOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/72 px-4 backdrop-blur-[3px]" role="dialog" aria-modal="true">

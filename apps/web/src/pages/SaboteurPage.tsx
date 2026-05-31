@@ -41,6 +41,7 @@ import {
   saboteurViewport
 } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
+import { useTempo } from "../lib/tempo";
 
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 const JOINT_HANDLE_RADIUS = 10;
@@ -216,7 +217,11 @@ export function SaboteurPage() {
   const [saveErrorNonce, setSaveErrorNonce] = useState(0);
   const [showHole, setShowHole] = useState(false);
   const gameControls = useActiveGame();
-  const { connectionStatus, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
+  const { connectionStatus, game, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
+  // Saboteur-only queue of poses to feed the dummy, one per 8-count cycle.
+  const [queue, setQueue] = useState<UniversalPose[]>([]);
+  const tempo = useTempo(game?.playingStartedAt ?? null);
+  const lastFedCycleRef = useRef<number | null>(null);
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
@@ -401,8 +406,28 @@ export function SaboteurPage() {
   }
 
   function sendPose() {
-    broadcastPose(displayPose);
+    // Add to the saboteur-only queue; the tempo loop feeds one to the dummy per cycle.
+    setQueue((current) => [...current, clonePose(displayPose)]);
+    setSocketStatus(`Queued ${displayPose.name}`);
   }
+
+  // On each new 8-count cycle, feed the dummy the next queued pose; if the queue is empty,
+  // play a random pose from the gallery so the loop never stalls.
+  useEffect(() => {
+    if (!tempo || tempo.cycle === lastFedCycleRef.current) {
+      return;
+    }
+    lastFedCycleRef.current = tempo.cycle;
+
+    if (queue.length > 0) {
+      broadcastPose(queue[0]!);
+      setQueue((current) => current.slice(1));
+    } else if (poseList.length > 0) {
+      broadcastPose(poseList[Math.floor(Math.random() * poseList.length)]!);
+    }
+    // Guarded by the cycle-change check above, so re-runs from queue/poseList changes no-op.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tempo?.cycle, queue, poseList]);
 
   function savePose() {
     if (!draftPose) {
@@ -497,6 +522,36 @@ export function SaboteurPage() {
         </div>
 
         <aside className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className={cx(saboteurCard, "flex flex-col gap-2 p-3")}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold tracking-[0.12em] text-[#aebbb8] uppercase">Pose Queue</span>
+              <span className="text-[11px] font-bold text-[#8b919c]">{queue.length} waiting</span>
+            </div>
+            {queue.length > 0 ? (
+              <ol className="m-0 flex max-h-44 flex-col gap-1.5 overflow-y-auto p-0">
+                {queue.map((queued, index) => (
+                  <li
+                    key={`${queued.id}-${index}`}
+                    className="flex items-center gap-2 rounded-[10px] bg-[#252830] px-3 py-2 text-sm font-extrabold text-[#ece8e0]"
+                  >
+                    <span
+                      className={cx(
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase",
+                        index === 0 ? "bg-[#2fb86b] text-white" : "bg-[#3a3f4a] text-[#aeb6c2]"
+                      )}
+                    >
+                      {index === 0 ? "Next" : index + 1}
+                    </span>
+                    <span className="truncate">{queued.name}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="m-0 text-xs leading-5 font-semibold text-[#8b919c]">
+                Empty — a random saved pose plays each beat. Send poses to queue them up.
+              </p>
+            )}
+          </div>
           <SaboteurDeckPanel
             poses={poseList}
             selectedIndex={poseIndex}
