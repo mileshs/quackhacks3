@@ -2,7 +2,6 @@ node_modules/
 dist/
 .turbo/
 .vite/
-.wrangler/
 coverage/
 .pnpm-store/
 *.tsbuildinfo
@@ -24,6 +23,7 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 .claude/
+.wrangler/
 
 # Local hackathon click runner with auth material.
 whatever.ts

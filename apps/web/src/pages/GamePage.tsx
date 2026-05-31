@@ -1,12 +1,9 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { canvasStage, eyebrow, pageGrid, pageTitle, primaryAction, secondaryAction, splitLayout, toolPanel } from "../lib/ui";
-import { useActiveGame } from "../lib/useActiveGame";
 
 export function GamePage() {
   const canvasMountRef = useRef<HTMLDivElement>(null);
-  const { connectionStatus, game, startGame, endGame } = useActiveGame();
-  const isGameActive = game?.activeGame ?? false;
 
   useEffect(() => {
     let sketch: { remove: () => void } | undefined;
@@ -60,21 +57,6 @@ export function GamePage() {
       <div className={splitLayout}>
         <div className={canvasStage} ref={canvasMountRef} />
         <aside className={toolPanel}>
-          <h2 className="m-0 text-lg font-bold">Game Session</h2>
-          <p className="m-0 text-sm font-semibold text-[#aebbb8]">
-            {isGameActive ? `Active game ${game?.gameId?.slice(0, 8) ?? ""}` : "No active game"}
-          </p>
-          <p className="m-0 text-sm text-[#aebbb8]">
-            {game ? `${game.playerCount} connected client${game.playerCount === 1 ? "" : "s"}` : connectionStatus}
-          </p>
-          <button className={primaryAction} type="button" onClick={startGame}>
-            {isGameActive ? "Join Game" : "New Game"}
-          </button>
-          {isGameActive ? (
-            <button className={secondaryAction} type="button" onClick={endGame}>
-              End Game
-            </button>
-          ) : null}
           <h2 className="m-0 text-lg font-bold">Debug Screens</h2>
           <Link className={primaryAction} to="/saboteur">
             Saboteur Option
