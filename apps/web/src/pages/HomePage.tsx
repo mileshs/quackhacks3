@@ -2,7 +2,7 @@ import "@fontsource/nunito/800.css";
 import "@fontsource/nunito/900.css";
 import { useEffect } from "react";
 import { BLOB_COLOR, GameRole } from "@quackhacks/shared";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { flushQueuedGameNotice } from "../lib/gameNotifications";
 import { cx } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
@@ -14,10 +14,6 @@ const SABOTEUR_FACE_COLOR = "#7a2035";
 const DUMMY_FACE_COLOR = "#1248a0";
 
 type HomeIcon = "pose" | "stop" | "gear";
-
-const secondaryMenuItems: Array<{ to: string; label: string; icon: HomeIcon; tone: "light" }> = [
-  { to: "/settings", label: "Settings", icon: "gear", tone: "light" }
-];
 
 const menuButtonBase =
   "relative grid min-h-[4.85rem] cursor-pointer grid-cols-[5.85rem_minmax(0,1fr)] items-center rounded-[1.55rem] px-7 py-2 pl-2 text-left text-[clamp(1.22rem,1.55vw,1.62rem)] leading-none font-black tracking-normal uppercase no-underline transition duration-200 hover:brightness-95 active:translate-y-1 disabled:cursor-not-allowed [&>span:last-child]:justify-self-start [&>span:last-child]:whitespace-nowrap min-[1181px]:grid-cols-[6.8rem_minmax(0,1fr)] min-[1181px]:rounded-[1.72rem] min-[1181px]:text-[clamp(1.32rem,1.68vw,1.64rem)]";
@@ -193,11 +189,11 @@ export function HomePage() {
 
   return (
     <section
-      className="fixed inset-0 z-20 grid min-h-svh items-start justify-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_23%,rgba(255,248,190,0.42)_0_8.5rem,rgba(255,248,190,0)_25rem),radial-gradient(circle_at_98%_-10%,rgba(255,248,210,0.3)_0_16rem,rgba(255,248,210,0)_16.08rem),linear-gradient(145deg,#ffe066_0%,#ffd13c_43%,#ffc127_100%)] px-4 font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] text-[#28303d] before:absolute before:inset-0 before:bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0_1px,transparent_1.45px),linear-gradient(105deg,rgba(255,247,171,0.22),transparent_42%)] before:bg-[length:17px_17px,100%_100%] before:opacity-[0.48]"
+      className="fixed inset-0 z-20 grid min-h-svh items-center justify-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_23%,rgba(255,248,190,0.42)_0_8.5rem,rgba(255,248,190,0)_25rem),radial-gradient(circle_at_98%_-10%,rgba(255,248,210,0.3)_0_16rem,rgba(255,248,210,0)_16.08rem),linear-gradient(145deg,#ffe066_0%,#ffd13c_43%,#ffc127_100%)] px-4 font-[Nunito,Inter,ui-sans-serif,system-ui,sans-serif] text-[#28303d] before:absolute before:inset-0 before:bg-[radial-gradient(circle,rgba(255,255,255,0.16)_0_1px,transparent_1.45px),linear-gradient(105deg,rgba(255,247,171,0.22),transparent_42%)] before:bg-[length:17px_17px,100%_100%] before:opacity-[0.48]"
       aria-labelledby="home-title"
     >
       <HomeDecor />
-      <div className="relative z-[2] mt-[clamp(4.6rem,10.8vh,6.6rem)] grid w-[min(31vw,500px)] min-w-[370px] justify-items-center max-[430px]:min-w-[calc(100vw-2rem)]">
+      <div className="relative z-[2] grid w-[min(31vw,500px)] min-w-[370px] justify-items-center max-[430px]:min-w-[calc(100vw-2rem)]">
         <h1 id="home-title" className="sr-only">
           Poses for Dummies
         </h1>
@@ -255,14 +251,6 @@ export function HomePage() {
               <span>End Game</span>
             </button>
           ) : null}
-          {secondaryMenuItems.map((item) => (
-            <Link key={item.to} className={cx(menuButtonBase, menuButtonTone[item.tone])} to={item.to}>
-              <span className="grid size-[3.45rem] place-items-center justify-self-center text-[#ff8217]">
-                <MenuIcon icon={item.icon} />
-              </span>
-              <span>{item.label}</span>
-            </Link>
-          ))}
         </nav>
       </div>
     </section>
