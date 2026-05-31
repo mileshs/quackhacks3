@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type p5 from "p5";
 import {
+  DEFAULT_POWERUP_DURATION_MS,
   HOLE_PADDING,
   buildBlobFigure,
   comparePoses,
@@ -10,6 +11,9 @@ import {
   scoreBandFromMatch,
   universalHumanSize,
   type FigurePrimitive,
+  type PowerupActivatePayload,
+  type RoundSnapshotPayload,
+  type SaboteurPowerupKind,
   type ScoreBand,
   type UniversalPose
 } from "@quackhacks/shared";
@@ -96,6 +100,8 @@ type AthleteStageProps = {
   savedPoseIds?: string[];
   selectedPoseId?: string;
   onSelectPose?: (pose: UniversalPose) => void;
+  powerupActivation?: PowerupActivatePayload | null;
+  onFinishWall?: (payload: RoundSnapshotPayload) => void;
 };
 
 // The hole keeps a human portrait shape (not stretched to the camera's aspect): a
@@ -300,7 +306,9 @@ export function AthleteStage({
   poseOptions,
   savedPoseIds,
   selectedPoseId,
-  onSelectPose
+  onSelectPose,
+  powerupActivation,
+  onFinishWall
 }: AthleteStageProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -334,12 +342,22 @@ export function AthleteStage({
   // you develop the UI with only your face/shoulders in frame.
   const [devMode, setDevMode] = useState(false);
   const lastHandUpdate = useRef(0);
+  const lastSpotlightUpdate = useRef(0);
+  const powerupTimerRef = useRef<number | null>(null);
+  const [activePowerup, setActivePowerup] = useState<SaboteurPowerupKind | null>(null);
+  const [spotlightPct, setSpotlightPct] = useState({ x: 50, y: 55 });
+  const matchPercentRef = useRef(0);
+  const bandRef = useRef<ScoreBand>("CRASH");
+  matchPercentRef.current = matchPercent;
+  bandRef.current = band;
 
   // The render loop reads these through refs so toggling doesn't rebuild the loop.
   const showDummyRef = useRef(showDummy);
   showDummyRef.current = showDummy;
   const devModeRef = useRef(devMode);
   devModeRef.current = devMode;
+  const activePowerupRef = useRef(activePowerup);
+  activePowerupRef.current = activePowerup;
 
   const stop = useCallback(() => {
     const wasActive = Boolean(stopLoopRef.current || streamRef.current);
@@ -356,6 +374,36 @@ export function AthleteStage({
   }, []);
 
   useEffect(() => stop, [stop]);
+
+  useEffect(
+    () => () => {
+      if (powerupTimerRef.current) {
+        window.clearTimeout(powerupTimerRef.current);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!powerupActivation) {
+      return;
+    }
+
+    const duration = powerupActivation.durationMs ?? DEFAULT_POWERUP_DURATION_MS;
+    setActivePowerup(powerupActivation.kind);
+    if (powerupTimerRef.current) {
+      window.clearTimeout(powerupTimerRef.current);
+    }
+    powerupTimerRef.current = window.setTimeout(() => setActivePowerup(null), duration);
+  }, [powerupActivation]);
+
+  function finishWall() {
+    onFinishWall?.({
+      matchPercent: matchPercentRef.current,
+      band: bandRef.current,
+      sentAt: new Date().toISOString()
+    });
+  }
 
   // Spin up the p5.js WEBGL canvas that renders the 3D dummy on top of the 2D hole. The
   // canvas mirrors the 2D canvas's resolution + CSS so the dummy lines up with the hole.
@@ -540,6 +588,14 @@ export function AthleteStage({
             setMatchPercent(percent);
             setBand(scoreBandFromMatch(percent));
           }
+
+          if (activePowerupRef.current === "blindness" && lHip && rHip && now - lastSpotlightUpdate.current > 50) {
+            lastSpotlightUpdate.current = now;
+            setSpotlightPct({
+              x: (1 - (lHip.x + rHip.x) / 2) * 100,
+              y: ((lHip.y + rHip.y) / 2) * 100
+            });
+          }
         },
         handLandmarker
       );
@@ -555,14 +611,31 @@ export function AthleteStage({
   return (
     <div className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
       <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
-      <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
+      <div className={cx("relative h-full w-full", activePowerup === "mirror" && "scale-x-[-1]")}>
+        <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
 
-      {/* 3D dummy renders here (p5.js WEBGL), overlaid on the 2D hole and matched to its
-          resolution + object-cover so the dummy lines up with the carved hole. */}
-      <div
-        ref={dummyMountRef}
-        className="pointer-events-none absolute inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
-      />
+        {/* 3D dummy renders here (p5.js WEBGL), overlaid on the 2D hole and matched to its
+            resolution + object-cover so the dummy lines up with the carved hole. */}
+        <div
+          ref={dummyMountRef}
+          className="pointer-events-none absolute inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
+        />
+      </div>
+
+      {activePowerup === "blindness" ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-45"
+          style={{
+            background: `radial-gradient(circle 130px at ${spotlightPct.x}% ${spotlightPct.y}%, transparent 0%, transparent 42%, rgba(0,0,0,0.88) 62%, #000 100%)`
+          }}
+        />
+      ) : null}
+
+      {activePowerup === "mirror" ? (
+        <div className="absolute top-6 left-1/2 z-46 -translate-x-1/2 rounded-full border border-[#64b4ff]/50 bg-[#64b4ff]/20 px-3 py-1 text-xs font-extrabold tracking-widest text-white uppercase">
+          Mirror Mode
+        </div>
+      ) : null}
 
       {/* TEMP dev toggle: sits above everything. In dev mode the game never pauses for
           framing and the dummy tracks your raw pose instead of clipping to the hole. */}
@@ -709,6 +782,9 @@ export function AthleteStage({
             onClick={() => setShowDummy((on) => !on)}
           >
             Dummy Overlay: {showDummy ? "On" : "Off"}
+          </button>
+          <button className={pillSecondary} type="button" onClick={finishWall}>
+            Finish Wall
           </button>
           <button
             className={pillSecondary}
