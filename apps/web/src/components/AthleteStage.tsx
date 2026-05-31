@@ -505,7 +505,7 @@ export function AthleteStage({
   const [score] = useState(0);
   const [lives] = useState(3);
   const [showDummy, setShowDummy] = useState(true);
-  const [showDebugDashboard, setShowDebugDashboard] = useState(true);
+  const [showDebugDashboard, setShowDebugDashboard] = useState(false);
   const [guidance, setGuidance] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<PoseDebugInfo | null>(null);
   // Dev mode comes from the global Settings menu now. When on, the game never pauses for
