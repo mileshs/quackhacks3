@@ -22,13 +22,14 @@ import { SaboteurSplash } from "../components/SaboteurSplash";
 import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
 import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
+import { SaboteurTutorialOverlay } from "../components/SaboteurTutorialOverlay";
 import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
+import { useDevSection, useSettings } from "../lib/settings";
 import { SKELETON_ADJUSTMENT_SOUNDS, useSound } from "../providers/SoundProvider";
 import {
   cx,
-  pillDanger,
   saboteurCard,
   saboteurJointHandleClass,
   saboteurPageBg,
@@ -160,14 +161,6 @@ const jointRotationLimits: Partial<Record<JointName, JointRotationLimit>> = {
   rightAnkle: { centerDegrees: 90, radiusDegrees: 95 }
 };
 
-function HamburgerIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-      <path d="M4 6h16M4 12h16M4 18h16" />
-    </svg>
-  );
-}
-
 /**
  * A transient error toast pinned to the top-left of the stage. It fades in on mount,
  * holds, then fades out and clears itself a few seconds later — so a failed save no
@@ -194,8 +187,9 @@ function SaveErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
   return (
     <div
       role="alert"
+      data-saboteur-save-error
       className={cx(
-        "pointer-events-none absolute left-5 top-5 z-20 max-w-[min(80%,320px)] rounded-[10px] bg-[#ef5c6b] px-3 py-2 text-sm font-bold text-white shadow-[0_8px_22px_rgba(150,25,40,0.5)] transition-opacity duration-300",
+        "pointer-events-none absolute left-1/2 bottom-[26%] z-20 max-w-[min(92%,320px)] -translate-x-1/2 rounded-[10px] bg-[#ef5c6b] px-3 py-2 text-center text-sm font-bold text-white shadow-[0_8px_22px_rgba(150,25,40,0.5)] transition-opacity duration-300",
         visible ? "opacity-100" : "opacity-0"
       )}
     >
@@ -206,9 +200,12 @@ function SaveErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
 
 export function SaboteurPage() {
   const { setNavHidden } = useChrome();
-  // Dev mode reveals the developer-only chrome: the global navbar, the "Your Progress"
-  // tracker, and the reward simulator buttons. Off by default for a clean player view.
-  const [devMode, setDevMode] = useState(false);
+  // Dev mode (from the global Settings menu) reveals the developer-only chrome: the
+  // "Your Progress" tracker, reward simulator buttons, connection status, and a toggle for
+  // the global navbar. Off by default for a clean player view.
+  const { devMode } = useSettings();
+  // The global navbar is hidden on this page; the dev "Show navbar" toggle controls it.
+  const [showNavbar, setShowNavbar] = useState(false);
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
@@ -226,6 +223,7 @@ export function SaboteurPage() {
     }
     return window.localStorage.getItem(SPLASH_SEEN_STORAGE_KEY) !== "true";
   });
+  const [tutorialRun, setTutorialRun] = useState(0);
   const [powerupProgress, setPowerupProgress] = useState<SaboteurPowerupProgress>({
     inventory: [],
     perfectStreak: 0,
@@ -239,11 +237,34 @@ export function SaboteurPage() {
     }
   }
 
-  // The navbar is hidden on this page unless dev mode is on; restore it on unmount.
+  // The navbar is hidden on this page unless the dev toggle turns it on; restore it on unmount.
   useEffect(() => {
-    setNavHidden(!devMode);
+    setNavHidden(!showNavbar);
     return () => setNavHidden(false);
-  }, [devMode, setNavHidden]);
+  }, [showNavbar, setNavHidden]);
+
+  // Saboteur dev controls live in the global Settings menu (under Dev Mode).
+  const saboteurDevSection = useMemo(
+    () => (
+      <div className="flex flex-col gap-2">
+        <span className="text-[11px] font-extrabold tracking-[0.12em] text-[#a89a82] uppercase">Saboteur</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={showNavbar}
+          onClick={() => setShowNavbar((on) => !on)}
+          className="flex items-center justify-between rounded-[12px] bg-white px-3 py-2.5 text-sm font-extrabold text-[#2b303b] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]"
+        >
+          Show navbar
+          <span className={cx("ml-3 rounded-full px-2 py-0.5 text-xs font-black", showNavbar ? "bg-[#2fb86b] text-white" : "bg-[#d8cdb5] text-[#5b5446]")}>
+            {showNavbar ? "On" : "Off"}
+          </span>
+        </button>
+      </div>
+    ),
+    [showNavbar]
+  );
+  useDevSection("saboteur", saboteurDevSection);
 
   useEffect(() => {
     persistSavedPoses(savedPoses);
@@ -434,10 +455,10 @@ export function SaboteurPage() {
         <div className="flex min-h-0 flex-col gap-3">
           {/* Canvas card: stage + tool buttons along the bottom of the dark viewport. */}
           <div className={cx(saboteurCard, "relative flex min-h-[min(70vh,680px)] flex-1 flex-col overflow-hidden p-3")}>
-            {saveError ? (
-              <SaveErrorToast key={saveErrorNonce} message={saveError} onDismiss={() => setSaveError(null)} />
-            ) : null}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-[#0c0d12] shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)]">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] bg-[#0c0d12] shadow-[inset_0_2px_10px_rgba(0,0,0,0.45)]">
+              {saveError ? (
+                <SaveErrorToast key={saveErrorNonce} message={saveError} onDismiss={() => setSaveError(null)} />
+              ) : null}
               <div className="flex min-h-0 flex-1 items-center justify-center px-2 py-2">
                 {showHole ? (
                   <SaboteurHolePreview pose={displayPose} />
@@ -457,6 +478,7 @@ export function SaboteurPage() {
                 onToggleHole={() => setShowHole((current) => !current)}
                 onSavePose={addPose}
                 onSendPose={sendPose}
+                onStartTutorial={() => setTutorialRun((run) => run + 1)}
               />
             </div>
           </div>
@@ -475,21 +497,6 @@ export function SaboteurPage() {
         </div>
 
         <aside className="flex min-h-0 flex-1 flex-col gap-3">
-          <button
-            type="button"
-            className={cx(
-              devMode ? pillDanger : saboteurPillSecondary,
-              "w-full px-4 py-2.5 text-[13px]"
-            )}
-            aria-pressed={devMode}
-            onClick={() => setDevMode((on) => !on)}
-          >
-            <span className="inline-flex w-full items-center justify-center gap-2">
-              <HamburgerIcon />
-              Controls
-            </span>
-          </button>
-
           <SaboteurDeckPanel
             poses={poseList}
             selectedIndex={poseIndex}
@@ -508,6 +515,7 @@ export function SaboteurPage() {
         </aside>
       </div>
     </section>
+      <SaboteurTutorialOverlay runKey={tutorialRun} />
     </RoleGameShell>
   );
 }
@@ -605,14 +613,22 @@ function StageBounds() {
  * — with `preserveAspectRatio="xMidYMid meet"` centering — so the 3D dummy lines up pixel
  * for pixel with the SVG joint handles / bounds overlaid on top of it.
  */
+function randomBlinkDelayMs() {
+  return 2200 + Math.random() * 4800;
+}
+
+const BLINK_CLOSE_MS = 130;
+
 function Dummy3DStage({
   pose,
   faceMode = "happy",
-  className
+  className,
+  blink = true
 }: {
   pose: UniversalPose;
   faceMode?: FaceMode;
   className?: string;
+  blink?: boolean;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   // The detect/animation loop reads the latest pose + face through refs so we never have
@@ -621,6 +637,39 @@ function Dummy3DStage({
   poseRef.current = pose;
   const faceModeRef = useRef<FaceMode>(faceMode);
   faceModeRef.current = faceMode;
+  const eyesClosedRef = useRef(false);
+
+  useEffect(() => {
+    if (!blink) {
+      eyesClosedRef.current = false;
+      return;
+    }
+
+    let blinkTimer = 0;
+    let openTimer = 0;
+
+    const scheduleBlink = () => {
+      blinkTimer = window.setTimeout(() => {
+        if (faceModeRef.current !== "squeeze") {
+          eyesClosedRef.current = true;
+          openTimer = window.setTimeout(() => {
+            eyesClosedRef.current = false;
+            scheduleBlink();
+          }, BLINK_CLOSE_MS);
+          return;
+        }
+        scheduleBlink();
+      }, randomBlinkDelayMs());
+    };
+
+    scheduleBlink();
+
+    return () => {
+      window.clearTimeout(blinkTimer);
+      window.clearTimeout(openTimer);
+      eyesClosedRef.current = false;
+    };
+  }, [blink]);
 
   useEffect(() => {
     let sketch: p5 | undefined;
@@ -674,7 +723,8 @@ function Dummy3DStage({
             s,
             width: p.width,
             height: p.height,
-            faceMode: faceModeRef.current
+            faceMode: faceModeRef.current,
+            eyesClosed: blink && eyesClosedRef.current && faceModeRef.current === "happy"
           });
         };
       }, mountRef.current);
@@ -783,6 +833,10 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
   const [isWriggling, setIsWriggling] = useState(false);
   const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
   const torsoCenter = getTorsoCenter(jointMap);
+  const footGrounded = useMemo(
+    () => hasGroundedFoot(applyPoseConstraints(pose, activeJoint ?? "hips")),
+    [pose, activeJoint]
+  );
 
   useEffect(() => {
     latestPoseRef.current = pose;
@@ -889,6 +943,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
         viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
         role="img"
         aria-label="Editable saboteur pose"
+        data-foot-grounded={footGrounded ? "true" : "false"}
         onPointerMove={moveActiveJoint}
         onPointerUp={stopPointerAction}
         onPointerCancel={stopPointerAction}
@@ -913,6 +968,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
         {pose.joints.map((joint) => (
           <circle
             key={joint.name}
+            data-tutorial-joint={joint.name}
             cx={joint.x * universalHumanSize.width}
             cy={joint.y * universalHumanSize.height}
             r={JOINT_HANDLE_RADIUS}
@@ -965,6 +1021,7 @@ function TorsoMoveHandle({
       onPointerDown={onPointerDown}
       className={isWriggling ? "cursor-grabbing" : "cursor-grab"}
       aria-label="Move entire pose"
+      data-tutorial-move-handle
     >
       <circle r={16} className="fill-transparent" />
       <g className={saboteurTorsoHandleIcon}>

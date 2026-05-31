@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type p5 from "p5";
 import {
   DEFAULT_POWERUP_DURATION_MS,
@@ -24,6 +23,7 @@ import {
   type PoseFrame
 } from "../lib/poseTracker";
 import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dummy3d";
+import { useDevSection, useSettings } from "../lib/settings";
 import { cx } from "../lib/ui";
 
 // ── "Poses for Dummies" HUD palette ──────────────────────────────────────────
@@ -71,14 +71,6 @@ function HeartIcon({ filled }: { filled: boolean }) {
       {filled && (
         <ellipse cx="8" cy="8.6" rx="2.4" ry="1.6" fill="rgba(255,255,255,0.6)" transform="rotate(-32 8 8.6)" />
       )}
-    </svg>
-  );
-}
-
-function HamburgerIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-5 shrink-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-      <path d="M4 6h16M4 12h16M4 18h16" />
     </svg>
   );
 }
@@ -511,13 +503,12 @@ export function AthleteStage({
   // Placeholder HUD values until the full game loop is wired in.
   const [score] = useState(0);
   const [lives] = useState(3);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDummy, setShowDummy] = useState(true);
   const [guidance, setGuidance] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<PoseDebugInfo | null>(null);
-  // Temporary dev affordance: when on, the game never pauses for framing, but the dummy
-  // still anchors to the player's real frame position so walking left/right can be tested.
-  const [devMode, setDevMode] = useState(false);
+  // Dev mode comes from the global Settings menu now. When on, the game never pauses for
+  // framing, and the athlete dev controls (pose picker etc.) appear in the Settings dropdown.
+  const { devMode } = useSettings();
   const lastHandUpdate = useRef(0);
   const lastSpotlightUpdate = useRef(0);
   const lastDebugUpdate = useRef(0);
@@ -528,6 +519,8 @@ export function AthleteStage({
   const bandRef = useRef<ScoreBand>("CRASH");
   matchPercentRef.current = matchPercent;
   bandRef.current = band;
+  const debugInfoRef = useRef<PoseDebugInfo | null>(null);
+  debugInfoRef.current = debugInfo;
 
   // The render loop reads these through refs so toggling doesn't rebuild the loop.
   const showDummyRef = useRef(showDummy);
@@ -691,7 +684,6 @@ export function AthleteStage({
 
       setStatus("Tracking");
       setRunning(true);
-      setSidebarOpen(false);
 
       stopLoopRef.current = startPoseLoop(
         video,
@@ -797,6 +789,75 @@ export function AthleteStage({
     }
   }
 
+  // Stable wrappers so the registered dev-section node doesn't churn on the ~8/s match
+  // re-renders (the underlying functions are recreated every render).
+  const startRef = useRef<() => void>(() => {});
+  startRef.current = () => void start();
+  const finishWallRef = useRef<() => void>(() => {});
+  finishWallRef.current = () => finishWall();
+  const handleStart = useCallback(() => startRef.current(), []);
+  const handleFinishWall = useCallback(() => finishWallRef.current(), []);
+  const handleLogDebugSnapshot = useCallback(() => {
+    console.info("pose alignment debug", debugInfoRef.current);
+  }, []);
+
+  // Athlete dev controls live in the global Settings menu (under Dev Mode).
+  const athleteDevSection = useMemo(
+    () => (
+      <div className="flex flex-col gap-3">
+        <span className="text-[11px] font-extrabold tracking-[0.12em] text-[#a89a82] uppercase">Athlete</span>
+        <p className="m-0 text-sm font-bold text-[#e08a17]">{status}</p>
+        {poseOptions && poseOptions.length > 0 ? (
+          <PoseMenu
+            poseOptions={poseOptions}
+            savedPoseIds={savedPoseIds}
+            selectedPoseId={selectedPoseId}
+            onSelectPose={onSelectPose}
+          />
+        ) : null}
+        <div className="flex flex-col gap-2">
+          {running ? (
+            <button className={pillSecondary} type="button" onClick={stop}>
+              Stop
+            </button>
+          ) : (
+            <button className={pillPrimary} type="button" onClick={handleStart}>
+              Start Pose Detection
+            </button>
+          )}
+          <button
+            className={pillSecondary}
+            type="button"
+            aria-pressed={showDummy}
+            onClick={() => setShowDummy((on) => !on)}
+          >
+            Dummy Overlay: {showDummy ? "On" : "Off"}
+          </button>
+          <button className={pillSecondary} type="button" onClick={handleFinishWall}>
+            Finish Wall
+          </button>
+          <button className={pillSecondary} type="button" onClick={handleLogDebugSnapshot}>
+            Log Debug Snapshot
+          </button>
+        </div>
+      </div>
+    ),
+    [
+      status,
+      running,
+      showDummy,
+      poseOptions,
+      savedPoseIds,
+      selectedPoseId,
+      onSelectPose,
+      handleStart,
+      handleFinishWall,
+      handleLogDebugSnapshot,
+      stop
+    ]
+  );
+  useDevSection("athlete", athleteDevSection);
+
   const matchColor = BAND_COLOR[band];
 
   return (
@@ -830,20 +891,6 @@ export function AthleteStage({
           Mirror Mode
         </div>
       ) : null}
-
-      {/* TEMP dev toggle: sits above everything. In dev mode the game never pauses for
-          framing while the dummy remains anchored to the player's real position. */}
-      <button
-        type="button"
-        className={cx(
-          "absolute top-4 left-1/2 z-50 min-h-9 -translate-x-1/2 cursor-pointer rounded-full px-4 py-1.5 text-sm font-extrabold shadow-[0_4px_12px_rgba(80,55,0,0.18)] transition-colors",
-          devMode ? "bg-[#2fb86b] text-white" : "bg-[#fdf6e8]/90 text-[#a89a82]"
-        )}
-        aria-pressed={devMode}
-        onClick={() => setDevMode((on) => !on)}
-      >
-        Dev Mode: {devMode ? "On" : "Off"}
-      </button>
 
       {/* Top-left stack: logo and score. */}
       <div className="absolute top-4 left-4 z-42 flex w-[214px] flex-col gap-3">
@@ -896,17 +943,6 @@ export function AthleteStage({
         </div>
       )}
 
-      {/* Controls (sidebar) toggle, top-right. */}
-      <button
-        type="button"
-        className={cx(pillSecondary, "absolute top-4 right-4 z-43 px-4 py-2.5 text-[13px] uppercase tracking-[0.08em]")}
-        aria-expanded={sidebarOpen}
-        onClick={() => setSidebarOpen((open) => !open)}
-      >
-        <HamburgerIcon />
-        {sidebarOpen ? "Close" : "Controls"}
-      </button>
-
       {/* Fullscreen toggle, bottom-right circular button. */}
       <button
         type="button"
@@ -940,66 +976,6 @@ export function AthleteStage({
         </div>
       )}
 
-      {/* Slide-out controls. */}
-      <aside
-        className={cx(
-          "absolute top-0 right-0 z-44 flex h-full w-[min(340px,84vw)] flex-col gap-4 overflow-y-auto border-l border-[#00000010] bg-[#fff7e8] px-5 pt-16 pb-5 shadow-[-12px_0_40px_rgba(80,55,0,0.18)] transition-transform duration-200 ease-out",
-          sidebarOpen ? "translate-x-0" : "translate-x-full"
-        )}
-      >
-        <h2 className="m-0 text-lg font-black text-[#2b303b]">Athlete Controls</h2>
-        <p className="m-0 text-xl font-extrabold text-[#e08a17]">{status}</p>
-
-        {poseOptions && poseOptions.length > 0 && (
-          <PoseMenu
-            poseOptions={poseOptions}
-            savedPoseIds={savedPoseIds}
-            selectedPoseId={selectedPoseId}
-            onSelectPose={onSelectPose}
-          />
-        )}
-
-        <div className="flex flex-col gap-2">
-          {running ? (
-            <button className={pillSecondary} type="button" onClick={stop}>
-              Stop
-            </button>
-          ) : (
-            <button className={pillPrimary} type="button" onClick={() => void start()}>
-              Start Pose Detection
-            </button>
-          )}
-          <button
-            className={pillSecondary}
-            type="button"
-            aria-pressed={showDummy}
-            onClick={() => setShowDummy((on) => !on)}
-          >
-            Dummy Overlay: {showDummy ? "On" : "Off"}
-          </button>
-          <button
-            className={pillSecondary}
-            type="button"
-            disabled={!debugInfo}
-            onClick={() => console.info("pose alignment debug", debugInfo)}
-          >
-            Log Debug Snapshot
-          </button>
-          <button className={pillSecondary} type="button" onClick={finishWall}>
-            Finish Wall
-          </button>
-          <button
-            className={pillSecondary}
-            type="button"
-            onClick={() => toggleFullscreen(canvasRef.current?.parentElement ?? null)}
-          >
-            Toggle Fullscreen
-          </button>
-          <Link className={pillSecondary} to="/">
-            Back Home
-          </Link>
-        </div>
-      </aside>
     </div>
   );
 }
