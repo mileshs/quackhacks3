@@ -19,6 +19,7 @@ import {
   startPoseLoop,
   type PoseFrame
 } from "../lib/poseTracker";
+import { cx, largeStatus, primaryAction, secondaryAction } from "../lib/ui";
 
 type AthleteStageProps = {
   /** The hole/wall the athlete is trying to fit into (from the saboteur, or a preset). */
@@ -183,6 +184,12 @@ function makeOffscreen(): (width: number, height: number) => CanvasRenderingCont
 // Reusable offscreen layer for the wall: we carve the hole out of it, then composite
 // over the camera so the carve never erases camera pixels.
 const getWallCtx = makeOffscreen();
+
+const scoreBandClasses = {
+  PERFECT: "border-[#75e2be]/60 text-[#75e2be] [&_.score-bar-fill]:bg-[#75e2be]",
+  CLEAN: "border-[#ffd65c]/60 text-[#ffd65c] [&_.score-bar-fill]:bg-[#ffd65c]",
+  CRASH: "border-[#ef5c6b]/60 text-[#ef5c6b] [&_.score-bar-fill]:bg-[#ef5c6b]"
+} satisfies Record<ScoreBand, string>;
 
 export function AthleteStage({
   targetPose,
@@ -349,24 +356,38 @@ export function AthleteStage({
   }
 
   return (
-    <div className="projector-stage">
-      <video ref={videoRef} muted playsInline className="hidden-video" />
-      <canvas ref={canvasRef} width={1280} height={720} className="projector-canvas" />
+    <div className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
+      <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
+      <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
 
       {/* Big accuracy/score bar down the side of the screen. */}
-      <div className={`score-bar band-${band.toLowerCase()}`}>
-        <span className="score-bar-percent">{matchPercent}%</span>
-        <div className="score-bar-track">
-          <div className="score-bar-fill" style={{ height: `${matchPercent}%` }} />
+      <div
+        className={cx(
+          "absolute top-6 bottom-6 left-5 z-42 flex w-[78px] flex-col items-center gap-2 rounded-[18px] border border-[#f6f4ea]/18 bg-[#05080c]/72 px-2 py-3 font-extrabold backdrop-blur-[10px]",
+          scoreBandClasses[band]
+        )}
+      >
+        <span className="text-2xl">{matchPercent}%</span>
+        <div className="relative w-full flex-1 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="score-bar-fill absolute bottom-0 left-0 w-full bg-[#ef5c6b] transition-[height,background] duration-200 ease-linear"
+            style={{ height: `${matchPercent}%` }}
+          />
         </div>
-        <span className="score-bar-band">{band}</span>
+        <span className="text-xs tracking-[0.06em]">{band}</span>
       </div>
 
       {/* Hand open/closed (grab) indicator. */}
       {handStates.length > 0 && (
-        <div className="hands-hud">
+        <div className="absolute bottom-6 left-24 z-42 flex gap-2">
           {handStates.map((closed, index) => (
-            <span key={index} className={`hand-chip ${closed ? "grab" : "open"}`}>
+            <span
+              key={index}
+              className={cx(
+                "rounded-lg border border-[#f6f4ea]/18 bg-[#05080c]/62 px-3 py-2 font-extrabold text-[#d8e2df] backdrop-blur-lg",
+                closed && "border-[#ff2424]/85 bg-[#ff2424]/16 text-[#ff5a5a]"
+              )}
+            >
               {closed ? "✊ Grab" : "✋ Open"}
             </span>
           ))}
@@ -375,18 +396,21 @@ export function AthleteStage({
 
       {/* Out-of-frame guidance: dims the screen and pauses with big instructions. */}
       {running && guidance && (
-        <div className="guidance-overlay">
-          <span className="guidance-pause-icon" aria-hidden="true">
+        <div className="pointer-events-none absolute inset-0 z-44 flex flex-col items-center justify-center gap-5 bg-[#04070b]/72 text-center text-[#ffd65c] backdrop-blur-md">
+          <span
+            className="text-[clamp(4rem,12vw,9rem)] leading-none text-white/92 [text-shadow:0_0_24px_rgba(0,0,0,0.6)]"
+            aria-hidden="true"
+          >
             ⏸
           </span>
-          <span className="guidance-text">{guidance}</span>
+          <span className="px-6 text-[clamp(2.2rem,6vw,4.5rem)] font-black tracking-[0.01em] [text-shadow:0_2px_18px_rgba(0,0,0,0.7)]">{guidance}</span>
         </div>
       )}
 
       {/* Sidebar toggle. */}
       <button
         type="button"
-        className="stage-toggle"
+        className="absolute top-4 right-4 z-43 min-h-10 cursor-pointer rounded-lg border border-[#f6f4ea]/22 bg-[#05080c]/62 px-4 py-2 font-extrabold text-[#f6f4ea] backdrop-blur-lg"
         aria-expanded={sidebarOpen}
         onClick={() => setSidebarOpen((open) => !open)}
       >
@@ -395,17 +419,22 @@ export function AthleteStage({
 
       {/* Big start prompt only while idle. */}
       {!running && (
-        <div className="start-overlay">
-          <button className="primary-action start-button" type="button" onClick={start}>
+        <div className="absolute inset-0 z-41 grid place-items-center">
+          <button className={cx(primaryAction, "px-7 py-4 text-xl")} type="button" onClick={start}>
             Start Pose Detection
           </button>
         </div>
       )}
 
       {/* Slide-out controls. */}
-      <aside className={`stage-sidebar ${sidebarOpen ? "open" : ""}`}>
-        <h2>Athlete Controls</h2>
-        <p className="large-status">{status}</p>
+      <aside
+        className={cx(
+          "absolute top-0 right-0 z-42 flex h-full w-[min(340px,84vw)] flex-col gap-4 overflow-y-auto border-l border-[#f6f4ea]/16 bg-[#05080c]/92 px-5 pt-16 pb-5 backdrop-blur-[14px] transition-transform duration-200 ease-out",
+          sidebarOpen ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        <h2 className="m-0 text-lg font-bold">Athlete Controls</h2>
+        <p className={largeStatus}>{status}</p>
 
         {poseOptions && poseOptions.length > 0 && (
           <PoseMenu
@@ -416,18 +445,18 @@ export function AthleteStage({
           />
         )}
 
-        <div className="sidebar-section">
+        <div className="flex flex-col gap-2">
           {running ? (
-            <button className="secondary-action" type="button" onClick={stop}>
+            <button className={secondaryAction} type="button" onClick={stop}>
               Stop
             </button>
           ) : (
-            <button className="primary-action" type="button" onClick={start}>
+            <button className={primaryAction} type="button" onClick={start}>
               Start Pose Detection
             </button>
           )}
           <button
-            className="secondary-action"
+            className={secondaryAction}
             type="button"
             aria-pressed={showDummy}
             onClick={() => setShowDummy((on) => !on)}
@@ -435,13 +464,13 @@ export function AthleteStage({
             Dummy Overlay: {showDummy ? "On" : "Off"}
           </button>
           <button
-            className="secondary-action"
+            className={secondaryAction}
             type="button"
             onClick={() => toggleFullscreen(canvasRef.current?.parentElement ?? null)}
           >
             Toggle Fullscreen
           </button>
-          <Link className="secondary-action" to="/">
+          <Link className={secondaryAction} to="/">
             Back Home
           </Link>
         </div>
@@ -467,7 +496,7 @@ function PoseMenu({ poseOptions, savedPoseIds, selectedPoseId, onSelectPose }: P
     <button
       key={pose.id}
       type="button"
-      className={pose.id === selectedPoseId ? "primary-action" : "secondary-action"}
+      className={pose.id === selectedPoseId ? primaryAction : secondaryAction}
       onClick={() => onSelectPose?.(pose)}
     >
       {pose.name}
@@ -476,16 +505,16 @@ function PoseMenu({ poseOptions, savedPoseIds, selectedPoseId, onSelectPose }: P
 
   return (
     <>
-      <div className="sidebar-section">
-        <span className="sidebar-label">Starter holes</span>
-        <div className="sidebar-pose-buttons">{starters.map(renderButton)}</div>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-bold uppercase text-[#aebbb8]">Starter holes</span>
+        <div className="flex flex-col gap-2">{starters.map(renderButton)}</div>
       </div>
-      <div className="sidebar-section">
-        <span className="sidebar-label">Saboteur holes</span>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-bold uppercase text-[#aebbb8]">Saboteur holes</span>
         {saboteurPoses.length > 0 ? (
-          <div className="sidebar-pose-buttons">{saboteurPoses.map(renderButton)}</div>
+          <div className="flex flex-col gap-2">{saboteurPoses.map(renderButton)}</div>
         ) : (
-          <p className="sidebar-hint">
+          <p className="m-0 text-sm leading-5 text-[#aebbb8]">
             None yet. Build and save a pose on the Saboteur page, then return here.
           </p>
         )}

@@ -11,7 +11,11 @@ import {
   type UniversalPose
 } from "@quackhacks/shared";
 import { createSocketConnection } from "../lib/realtime";
+import { SaboteurSplash } from "../components/SaboteurSplash";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
+import { cx, floorLine, humanPreview, largeStatus, pageGrid, primaryAction, secondaryAction, toolPanel } from "../lib/ui";
+
+const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 
 const GROUND_Y = 0.94;
 const MIN_DRAG_RADIUS = 0.025;
@@ -121,7 +125,20 @@ export function SaboteurPage() {
   const [socketStatus, setSocketStatus] = useState("Socket.IO connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showHole, setShowHole] = useState(false);
+  const [showSplash, setShowSplash] = useState(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+    return window.localStorage.getItem(SPLASH_SEEN_STORAGE_KEY) !== "true";
+  });
   const socketRef = useRef<ReturnType<typeof createSocketConnection> | null>(null);
+
+  function dismissSplash() {
+    setShowSplash(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SPLASH_SEEN_STORAGE_KEY, "true");
+    }
+  }
 
   useEffect(() => {
     persistSavedPoses(savedPoses);
@@ -213,23 +230,15 @@ export function SaboteurPage() {
   }
 
   return (
-    <section
-      className="page-grid"
-      style={{
-        width: "min(1600px, calc(100% - 1rem))",
-        padding: "1rem 0"
-      }}
-    >
-      <div className="page-heading">
-        <h1>Saboteur Screen</h1>
+    <section className={cx(pageGrid, "w-[min(1600px,calc(100%-1rem))] py-4")}>
+      {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
+      <div className="flex items-center gap-4">
+        <h1 className="mt-0 mb-4 text-[clamp(2.4rem,6vw,4.5rem)] leading-[0.95]">Saboteur Screen</h1>
+        <button className={secondaryAction} type="button" onClick={() => setShowSplash(true)}>
+          Replay Intro
+        </button>
       </div>
-      <div
-        className="split-layout"
-        style={{
-          gridTemplateColumns: "minmax(0, 1fr) minmax(230px, 280px)",
-          gap: "0.75rem"
-        }}
-      >
+      <div className="grid grid-cols-1 items-stretch gap-3 min-[861px]:grid-cols-[minmax(0,1fr)_minmax(230px,280px)]">
         {showHole ? (
           <SaboteurHolePreview pose={activePose} />
         ) : draftPose ? (
@@ -237,27 +246,27 @@ export function SaboteurPage() {
         ) : (
           <SaboteurPosePreview pose={pose} />
         )}
-        <div className="tool-panel">
-          <h2>Pose Draft</h2>
-          <p className="large-status">{activePose.name}</p>
-          <button className="primary-action" type="button" onClick={makePose}>
+        <div className={toolPanel}>
+          <h2 className="m-0 text-lg font-bold">Pose Draft</h2>
+          <p className={largeStatus}>{activePose.name}</p>
+          <button className={primaryAction} type="button" onClick={makePose}>
             Make Pose
           </button>
           {draftPose ? (
-            <button className="secondary-action" type="button" onClick={savePose}>
+            <button className={secondaryAction} type="button" onClick={savePose}>
               Save Pose
             </button>
           ) : null}
           {saveError ? (
-            <p role="alert" style={{ color: "#ff8585", margin: "0.25rem 0", fontWeight: 600 }}>
+            <p className="my-1 font-semibold text-[#ff8585]" role="alert">
               {saveError}
             </p>
           ) : null}
-          <button className="primary-action" type="button" onClick={randomizePose}>
+          <button className={primaryAction} type="button" onClick={randomizePose}>
             Randomize Pose
           </button>
           <button
-            className="secondary-action"
+            className={secondaryAction}
             type="button"
             onClick={deleteSelectedPose}
             disabled={!canDeleteSelectedPose}
@@ -265,16 +274,16 @@ export function SaboteurPage() {
             Delete Pose
           </button>
           <button
-            className="secondary-action"
+            className={secondaryAction}
             type="button"
             onClick={() => setShowHole((current) => !current)}
           >
             {showHole ? "Hide Hole" : "Preview Hole"}
           </button>
-          <button className="secondary-action" type="button" onClick={() => broadcastPose(activePose)}>
+          <button className={secondaryAction} type="button" onClick={() => broadcastPose(activePose)}>
             Send Temp Pose
           </button>
-          <p>{socketStatus}</p>
+          <p className="m-0">{socketStatus}</p>
         </div>
       </div>
     </section>
@@ -364,7 +373,8 @@ function StageBounds() {
         y1={stageFloorY}
         x2={stageBounds.x + stageBounds.width}
         y2={stageFloorY}
-        className="floor-line"
+        className={floorLine}
+        strokeLinecap="round"
       />
     </g>
   );
@@ -388,7 +398,7 @@ function SaboteurPosePreview({ pose }: { pose: UniversalPose }) {
 
   return (
     <svg
-      className="human-preview"
+      className={humanPreview}
       viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
       role="img"
       aria-label={pose.name}
@@ -436,7 +446,7 @@ function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
 
   return (
     <svg
-      className="human-preview"
+      className={humanPreview}
       viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
       role="img"
       aria-label={`Hole preview for ${pose.name}`}
@@ -541,7 +551,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
   return (
     <svg
       ref={svgRef}
-      className="human-preview"
+      className={humanPreview}
       viewBox={`0 0 ${STAGE_WIDTH} ${STAGE_HEIGHT}`}
       role="img"
       aria-label="Editable saboteur pose"
@@ -903,7 +913,7 @@ function applyWavePose(pose: UniversalPose, elapsedSeconds: number, _legSide: "l
   return { ...pose, joints };
 }
 
-function getPosePoint(event: PointerEvent<Element>, svg: SVGSVGElement | null) {
+function getPosePoint(event: PointerEvent<SVGElement>, svg: SVGSVGElement | null) {
   if (!svg) {
     return null;
   }
