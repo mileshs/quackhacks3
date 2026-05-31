@@ -55,7 +55,7 @@ export type ActiveGameState = {
   gameId: string | null;
   startedAt: string | null;
   endedAt: string | null;
-  endReason: "manual" | "role-disconnected" | "role-timeout" | "soundtrack-complete" | null;
+  endReason: "manual" | "role-disconnected" | "role-timeout" | "soundtrack-complete" | "lives-depleted" | null;
   phase: GamePhase;
   countdownStartedAt: string | null;
   /** Set when the game enters the `playing` phase; the shared anchor for the 8-count tempo. */
@@ -69,6 +69,7 @@ export type GameClientMessage =
   | { type: "game:start" }
   | { type: "game:end" }
   | { type: "game:complete" }
+  | { type: "game:defeat" }
   | { type: "game:dev-start" }
   | { type: "role:claim"; role: GameRole }
   | { type: "role:heartbeat"; role: GameRole }

@@ -22,6 +22,18 @@ export function useRoleScopedSound(role: GameRole | null) {
     [role, sound]
   );
 
+  const playSoundEffectWithEnded = useCallback(
+    (id: SoundEffectId, onEnded?: () => void) => {
+      if (!canPlaySoundEffect(id, role)) {
+        onEnded?.();
+        return;
+      }
+
+      sound.playSoundEffectWithEnded(id, onEnded);
+    },
+    [role, sound]
+  );
+
   const playExclusiveRandomSoundEffect = useCallback(
     (candidates: readonly SoundEffectId[], shouldReplay?: () => boolean) => {
       const allowed = candidates.filter((id) => canPlaySoundEffect(id, role));
@@ -37,6 +49,7 @@ export function useRoleScopedSound(role: GameRole | null) {
   return {
     ...sound,
     playSoundEffect,
+    playSoundEffectWithEnded,
     playExclusiveRandomSoundEffect,
   };
 }

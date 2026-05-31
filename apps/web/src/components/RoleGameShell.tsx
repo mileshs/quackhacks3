@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { GameRole } from "@quackhacks/shared";
 import { useNavigate } from "react-router-dom";
+import { DefeatSequenceProvider } from "../lib/defeatSequence";
 import { queueGameNotice } from "../lib/gameNotifications";
 import { useDevSection } from "../lib/settings";
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
@@ -42,6 +43,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
   const lastCountdownAnchorRef = useRef<string | null>(null);
   const playedGameOverRef = useRef(false);
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
+  const [defeatSequenceActive, setDefeatSequenceActive] = useState(false);
   const [devSolo, setDevSolo] = useState(false);
   const [devSoloStartedAt, setDevSoloStartedAt] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -132,8 +134,13 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
       return;
     }
 
+    // Dummy plays gameOver during the local defeat sequence before defeatGame().
+    if (game.endReason === "lives-depleted" && role === GameRole.Dummy) {
+      return;
+    }
+
     playGameOverOnce();
-  }, [game?.endReason, playGameOverOnce]);
+  }, [game?.endReason, playGameOverOnce, role]);
 
   useEffect(() => {
     if (!isDev && game && !game.activeGame && !game.endReason) {
@@ -149,6 +156,11 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
     if (game.endReason === "soundtrack-complete") {
       queueGameNotice("The dummy survived the track!");
       navigate("/score?winner=dummy");
+      return;
+    }
+
+    if (game.endReason === "lives-depleted") {
+      navigate("/score?winner=saboteur");
       return;
     }
 
@@ -242,7 +254,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
   );
   useDevSection("game", gameDevSection);
 
-  const overlay = playing ? null : (
+  const overlay = playing || defeatSequenceActive ? null : (
     <RoleLobbyOverlay
       roleLabel={roleLabel}
       otherRoleLabel={otherRoleLabel}
@@ -258,15 +270,18 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
 
   return (
     <GameTempoProvider playingStartedAt={playing ? playingStartedAt : null}>
-      <RoleGameShellView
-        confirmEndOpen={confirmEndOpen}
-        overlay={overlay}
-        playing={playing}
-        setConfirmEndOpen={setConfirmEndOpen}
-        onConfirmEndGame={confirmEndGame}
-      >
-        {children}
-      </RoleGameShellView>
+      <DefeatSequenceProvider onActiveChange={setDefeatSequenceActive}>
+        <RoleGameShellView
+          confirmEndOpen={confirmEndOpen}
+          defeatSequenceActive={defeatSequenceActive}
+          overlay={overlay}
+          playing={playing}
+          setConfirmEndOpen={setConfirmEndOpen}
+          onConfirmEndGame={confirmEndGame}
+        >
+          {children}
+        </RoleGameShellView>
+      </DefeatSequenceProvider>
     </GameTempoProvider>
   );
 }
@@ -274,6 +289,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
 function RoleGameShellView({
   children,
   confirmEndOpen,
+  defeatSequenceActive,
   overlay,
   playing,
   setConfirmEndOpen,
@@ -281,6 +297,7 @@ function RoleGameShellView({
 }: {
   children: ReactNode;
   confirmEndOpen: boolean;
+  defeatSequenceActive: boolean;
   overlay: ReactNode;
   playing: boolean;
   setConfirmEndOpen: (open: boolean) => void;
@@ -301,7 +318,7 @@ function RoleGameShellView({
 
       {overlay}
 
-      {playing ? <TempoIndicator tempo={tempo} /> : null}
+      {playing && !defeatSequenceActive ? <TempoIndicator tempo={tempo} /> : null}
 
       {confirmEndOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/72 px-4 backdrop-blur-[3px]" role="dialog" aria-modal="true">
