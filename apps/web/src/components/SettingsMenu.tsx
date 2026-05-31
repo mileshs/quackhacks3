@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { AudioVolumeControls } from "./AudioVolumeControls";
+import { DEMO_WALL_COUNT_OPTIONS, type DemoWallCount } from "../lib/demoSettings";
 import { useSettings } from "../lib/settings";
 import { cx } from "../lib/ui";
 import { SettingsToggle } from "./SettingsToggle";
@@ -44,7 +45,17 @@ function GearIcon({ color }: { color: string }) {
 export function SettingsMenu() {
   const location = useLocation();
   const accent = accentForPath(location.pathname);
-  const { devMode, setDevMode, devSections } = useSettings();
+  const {
+    devMode,
+    setDevMode,
+    demoMode,
+    setDemoMode,
+    demoWallCount,
+    setDemoWallCount,
+    invincibleMode,
+    setInvincibleMode,
+    devSections
+  } = useSettings();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -122,6 +133,47 @@ export function SettingsMenu() {
             checked={devMode}
             onCheckedChange={setDevMode}
           />
+
+          {devMode ? (
+            <div className="flex flex-col gap-2 border-t border-[#0000000f] pt-3">
+              <SettingsToggle
+                id="settings-demo-mode"
+                label="Demo Mode"
+                description="End the run after a short pose count instead of the full track."
+                checked={demoMode}
+                onCheckedChange={setDemoMode}
+              />
+              {demoMode ? (
+                <div className="flex flex-col gap-1.5 rounded-[12px] bg-white px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]">
+                  <span className="text-sm font-extrabold">Demo length</span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {DEMO_WALL_COUNT_OPTIONS.map((count) => (
+                      <button
+                        key={count}
+                        type="button"
+                        className={cx(
+                          "rounded-[10px] px-2 py-2 text-sm font-extrabold transition-colors",
+                          demoWallCount === count
+                            ? "bg-[#2b303b] text-white"
+                            : "bg-[#fff7e8] text-[#2b303b] hover:bg-[#fdf6e8]"
+                        )}
+                        onClick={() => setDemoWallCount(count)}
+                      >
+                        {count} {count === 1 ? "pose" : "poses"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <SettingsToggle
+                id="settings-invincible-mode"
+                label="Invincible Mode"
+                description="Dummy cannot lose hearts from missed poses."
+                checked={invincibleMode}
+                onCheckedChange={setInvincibleMode}
+              />
+            </div>
+          ) : null}
 
           {/* Page-specific dev controls */}
           {devMode ? (

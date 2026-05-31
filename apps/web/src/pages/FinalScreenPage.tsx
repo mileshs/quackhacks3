@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { readPersistedClaimedRole } from "../lib/claimedRoleStorage";
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
+import { useSettings } from "../lib/settings";
 import {
   dummyFinalStats,
   finalResultCopy,
@@ -344,8 +345,8 @@ export function FinalScreenPage() {
     return readCachedGallery(captureSession) === null;
   });
   const { playSoundEffect } = useRoleScopedSound(readPersistedClaimedRole());
+  const { devMode } = useSettings();
   const result = finalResultCopy[winner];
-  const isDev = import.meta.env.DEV;
 
   useEffect(() => {
     if (!captureSession) {
@@ -452,7 +453,7 @@ export function FinalScreenPage() {
         >
           Back Home
         </Link>
-        {isDev ? (
+        {devMode ? (
           <button
             className={cx(
               "inline-flex min-h-[3.25rem] items-center justify-center rounded-[1.3rem] px-6 text-[clamp(0.85rem,1.3vw,1rem)] font-black uppercase tracking-normal transition duration-200 active:translate-y-1",

@@ -6,7 +6,9 @@ import { buildScorePath } from "../lib/gameCapture";
 import { queueGameNotice } from "../lib/gameNotifications";
 import { useDevSection } from "../lib/settings";
 import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
+import { useDemoRunComplete } from "../hooks/useDemoRunComplete";
 import { useSoundtrackGameSync } from "../hooks/useSoundtrackGameSync";
+import { useEffectiveDevGameplay } from "../lib/settings";
 import { GameTempoProvider, useGameTempo } from "../lib/tempo";
 import { cx } from "../lib/ui";
 import { TempoIndicator } from "./TempoIndicator";
@@ -79,6 +81,7 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
   const otherReady = otherClaim?.ready ?? false;
   const playing = devSolo || game?.phase === "playing";
   const playingStartedAt = game?.playingStartedAt ?? devSoloStartedAt;
+  const { demoMode } = useEffectiveDevGameplay();
 
   const playGameOverOnce = useCallback(() => {
     if (playedGameOverRef.current) {
@@ -107,7 +110,14 @@ export function RoleGameShell({ role, controls, children }: RoleGameShellProps) 
   useSoundtrackGameSync({
     playing: role === GameRole.Dummy && playing,
     playingStartedAt: role === GameRole.Dummy && playing ? playingStartedAt : null,
+    demoMode,
     onSoundtrackComplete: handleSoundtrackComplete,
+  });
+
+  useDemoRunComplete({
+    playing: role === GameRole.Dummy && playing,
+    playingStartedAt: role === GameRole.Dummy && playing ? playingStartedAt : null,
+    onDemoComplete: handleSoundtrackComplete,
   });
 
   const countdownSeconds = useMemo(() => {
