@@ -1,3 +1,4 @@
+export * from "./figure.js";
 export * from "./holes.js";
 export * from "./leaderboard.js";
 export * from "./poseMatch.js";
