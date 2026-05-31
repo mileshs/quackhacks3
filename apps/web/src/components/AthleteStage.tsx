@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import type p5 from "p5";
 import {
   BLOB_COLOR,
+  FACE_COLOR,
   HOLE_PADDING,
   buildBlobFigure,
   comparePoses,
@@ -19,7 +21,72 @@ import {
   startPoseLoop,
   type PoseFrame
 } from "../lib/poseTracker";
-import { cx, largeStatus, primaryAction, secondaryAction } from "../lib/ui";
+import { cx } from "../lib/ui";
+
+// ── "Poses for Dummies" HUD palette ──────────────────────────────────────────
+const INK = "#2b303b"; // dark navy from the logo
+const BAND_COLOR: Record<ScoreBand, string> = {
+  PERFECT: "#2fb86b",
+  CLEAN: "#f0a52e",
+  CRASH: "#ef5c6b"
+};
+
+// Soft cream card with a layered shadow + inset top highlight so it pops off the page.
+const hudCard =
+  "rounded-[18px] bg-[#fdf6e8] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.9),0_2px_3px_rgba(0,0,0,0.12),0_12px_24px_rgba(80,55,0,0.3)]";
+const hudLabel = "block text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#a89a82]";
+
+// Cream pill button (logo-dark text), and a yellow "primary" variant. Both get a raised,
+// 3D look via an inset top highlight, a tight contact shadow, and a soft cast shadow.
+const pillBase =
+  "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[16px] px-4 py-3 font-extrabold text-[#2b303b] no-underline transition-transform active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50";
+const pillSecondary = cx(
+  pillBase,
+  "bg-[#fdf6e8] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.95),0_2px_3px_rgba(0,0,0,0.14),0_9px_18px_rgba(70,50,0,0.3)] hover:bg-white"
+);
+const pillPrimary = cx(
+  pillBase,
+  "bg-[#ffc83d] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.6),0_2px_3px_rgba(0,0,0,0.16),0_9px_18px_rgba(180,120,0,0.45)] hover:brightness-[1.04]"
+);
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-6 shrink-0 drop-shadow-[0_2px_3px_rgba(120,80,0,0.5)]" fill="#ffc83d" aria-hidden="true">
+      <path d="M12 2.5l2.9 5.9 6.5.95-4.7 4.58 1.1 6.47L12 17.4l-5.8 3.05 1.1-6.47L2.6 9.35l6.5-.95L12 2.5z" />
+    </svg>
+  );
+}
+
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-14 shrink-0 drop-shadow-[0_3px_6px_rgba(0,0,0,0.28)]" aria-hidden="true">
+      <path
+        d="M12 20.5l-1.45-1.32C5.4 14.5 2 11.42 2 7.62 2 4.9 4.13 2.75 6.85 2.75c1.54 0 3.02.72 4 1.86.98-1.14 2.46-1.86 4-1.86C21.57 2.75 23.7 4.9 23.7 7.62c0 .12 0 .24-.02.36C23.46 11.5 20.2 14.5 13.45 19.18L12 20.5z"
+        transform="translate(-1.85 0)"
+        fill={filled ? "#ff5564" : "#e7d9bc"}
+      />
+      {filled && (
+        <ellipse cx="8" cy="8.6" rx="2.4" ry="1.6" fill="rgba(255,255,255,0.6)" transform="rotate(-32 8 8.6)" />
+      )}
+    </svg>
+  );
+}
+
+function HamburgerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5 shrink-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+function FullscreenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-6 shrink-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.25)]" fill="none" stroke={INK} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" />
+    </svg>
+  );
+}
 
 type AthleteStageProps = {
   /** The hole/wall the athlete is trying to fit into (from the saboteur, or a preset). */
@@ -36,8 +103,6 @@ type AthleteStageProps = {
 // centered "doorway". HOLE_SCALE is the fraction of the frame height it occupies.
 const HOLE_ASPECT = universalHumanSize.width / universalHumanSize.height;
 const HOLE_SCALE = 0.8;
-// Floor line height (fraction of the region) representing the ground.
-const FLOOR_Y = 0.96;
 
 type Region = { x0: number; y0: number; w: number; h: number };
 
@@ -97,9 +162,6 @@ function frameGuidance(landmarks: PoseFrame["landmarks"]): string | null {
   return null;
 }
 
-// Everything OUTSIDE the hole is a solid bright-yellow wall; the hole itself is
-// punched clear so the live camera shows through it.
-const WALL_COLOR = "#ffd60a";
 // Backdrop behind the wall (the hole reads as black, matching the running view).
 const IDLE_BACKDROP = "#000000";
 
@@ -185,12 +247,6 @@ function makeOffscreen(): (width: number, height: number) => CanvasRenderingCont
 // over the camera so the carve never erases camera pixels.
 const getWallCtx = makeOffscreen();
 
-const scoreBandClasses = {
-  PERFECT: "border-[#75e2be]/60 text-[#75e2be] [&_.score-bar-fill]:bg-[#75e2be]",
-  CLEAN: "border-[#ffd65c]/60 text-[#ffd65c] [&_.score-bar-fill]:bg-[#ffd65c]",
-  CRASH: "border-[#ef5c6b]/60 text-[#ef5c6b] [&_.score-bar-fill]:bg-[#ef5c6b]"
-} satisfies Record<ScoreBand, string>;
-
 export function AthleteStage({
   targetPose,
   poseOptions,
@@ -204,24 +260,38 @@ export function AthleteStage({
   const stopLoopRef = useRef<(() => void) | null>(null);
   const lastMatchUpdate = useRef(0);
 
+  // The dummy is rendered on a separate p5.js WEBGL canvas overlaid on the 2D one. The
+  // detect loop publishes the latest pose here and the p5 draw loop reads it.
+  const dummyMountRef = useRef<HTMLDivElement>(null);
+  const dummyRenderRef = useRef<DummyRender | null>(null);
+
   // Keep the latest target in a ref so the running detect loop always sees fresh data
   // without us tearing down and rebuilding the loop on every prop change.
   const targetRef = useRef(targetPose);
   targetRef.current = targetPose;
 
-  const [status, setStatus] = useState("Idle");
+  const [status, setStatus] = useState("Starting…");
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState(false);
   const [matchPercent, setMatchPercent] = useState(0);
   const [band, setBand] = useState<ScoreBand>("CRASH");
+  // Placeholder HUD values until the full game loop is wired in.
+  const [score] = useState(0);
+  const [lives] = useState(3);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDummy, setShowDummy] = useState(true);
-  const [handStates, setHandStates] = useState<boolean[]>([]);
   const [guidance, setGuidance] = useState<string | null>(null);
+  // Temporary dev affordance: when on, the game never pauses for framing and the dummy
+  // tracks the raw live pose instead of being retargeted/anchored onto the hole. Lets
+  // you develop the UI with only your face/shoulders in frame.
+  const [devMode, setDevMode] = useState(false);
   const lastHandUpdate = useRef(0);
 
-  // The render loop reads this through a ref so toggling doesn't rebuild the loop.
+  // The render loop reads these through refs so toggling doesn't rebuild the loop.
   const showDummyRef = useRef(showDummy);
   showDummyRef.current = showDummy;
+  const devModeRef = useRef(devMode);
+  devModeRef.current = devMode;
 
   const stop = useCallback(() => {
     const wasActive = Boolean(stopLoopRef.current || streamRef.current);
@@ -229,15 +299,66 @@ export function AthleteStage({
     stopLoopRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    dummyRenderRef.current = null;
     if (wasActive) {
       setRunning(false);
       setStatus("Stopped");
-      setHandStates([]);
       setGuidance(null);
     }
   }, []);
 
   useEffect(() => stop, [stop]);
+
+  // Spin up the p5.js WEBGL canvas that renders the 3D dummy on top of the 2D hole. The
+  // canvas mirrors the 2D canvas's resolution + CSS so the dummy lines up with the hole.
+  useEffect(() => {
+    let sketch: p5 | undefined;
+    let cancelled = false;
+
+    void import("p5").then((module) => {
+      if (cancelled || !dummyMountRef.current) {
+        return;
+      }
+      const P5 = module.default;
+      sketch = new P5((p: p5) => {
+        p.setup = () => {
+          const source = canvasRef.current;
+          p.createCanvas(source?.width || 1280, source?.height || 720, p.WEBGL);
+          p.noStroke();
+        };
+        p.draw = () => {
+          // Keep the 3D canvas matched to the 2D canvas's resolution so they stay aligned.
+          const source = canvasRef.current;
+          if (source && (source.width !== p.width || source.height !== p.height)) {
+            p.resizeCanvas(source.width, source.height);
+          }
+          p.clear();
+          const data = dummyRenderRef.current;
+          if (!data || !showDummyRef.current) {
+            return;
+          }
+          drawDummy3D(p, data.pose, data.handClosed, p.width, p.height, data.hipFrameX);
+        };
+      }, dummyMountRef.current);
+    });
+
+    return () => {
+      cancelled = true;
+      sketch?.remove();
+    };
+  }, []);
+
+  // Auto-start pose detection on mount instead of waiting for a button. Guarded with a
+  // ref so React StrictMode's double-invoke (and re-renders) don't kick off twice.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) {
+      return;
+    }
+    autoStartedRef.current = true;
+    void start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Preview the target hole on a black backdrop whenever it changes while paused, so
   // the saboteur's edits are visible before the camera is even running.
@@ -257,6 +378,7 @@ export function AthleteStage({
 
   async function start() {
     try {
+      setError(false);
       setStatus("Requesting webcam");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -320,7 +442,13 @@ export function AthleteStage({
           // real proportions. The same pose drives both the drawn dummy and the score.
           const aspect = (video.videoWidth || 16) / (video.videoHeight || 9);
           const live = landmarks ? landmarksToUniversalPose(landmarks, aspect, { mirror: true }) : null;
-          const dummyPose = live ? retargetPose(live, targetRef.current) : null;
+          // In dev mode the dummy follows the raw live pose so it never snaps/clips onto
+          // the hole; in normal play it's retargeted onto the hole's exact bone lengths.
+          const dummyPose = live
+            ? devModeRef.current
+              ? live
+              : retargetPose(live, targetRef.current)
+            : null;
 
           // The puppet is hip-anchored to the hole (for fair, position-independent
           // scoring), so track the player's real horizontal frame position separately
@@ -329,15 +457,16 @@ export function AthleteStage({
           const rHip = landmarks?.[24];
           const hipFrameX = lHip && rHip ? (lHip.x + rHip.x) / 2 : null;
 
+          // Publish the pose for the p5 WEBGL dummy, and paint the 2D backdrop + hole.
+          dummyRenderRef.current = dummyPose ? { pose: dummyPose, handClosed, hipFrameX } : null;
           if (ctx) {
-            drawFrame(ctx, dummyPose, handClosed, targetRef.current, showDummyRef.current, hipFrameX);
+            drawFrame(ctx, targetRef.current);
           }
 
           const now = performance.now();
           if (now - lastHandUpdate.current > 120) {
             lastHandUpdate.current = now;
-            setHandStates(hands.map((hand) => hand.closed));
-            setGuidance(frameGuidance(landmarks));
+            setGuidance(devModeRef.current ? null : frameGuidance(landmarks));
           }
 
           if (dummyPose && now - lastMatchUpdate.current > 120) {
@@ -349,50 +478,78 @@ export function AthleteStage({
         },
         handLandmarker
       );
-    } catch (error) {
-      setStatus(`Error: ${(error as Error).message}`);
+    } catch (err) {
+      setStatus(`Error: ${(err as Error).message}`);
+      setError(true);
       stop();
     }
   }
+
+  const matchColor = BAND_COLOR[band];
 
   return (
     <div className="fixed inset-0 z-40 overflow-hidden bg-[#05080c]">
       <video ref={videoRef} muted playsInline className="pointer-events-none absolute size-px opacity-0" />
       <canvas ref={canvasRef} width={1280} height={720} className="block h-full w-full object-cover" />
 
-      {/* Big accuracy/score bar down the side of the screen. */}
+      {/* 3D dummy renders here (p5.js WEBGL), overlaid on the 2D hole and matched to its
+          resolution + object-cover so the dummy lines up with the carved hole. */}
       <div
+        ref={dummyMountRef}
+        className="pointer-events-none absolute inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full [&>canvas]:object-cover"
+      />
+
+      {/* TEMP dev toggle: sits above everything. In dev mode the game never pauses for
+          framing and the dummy tracks your raw pose instead of clipping to the hole. */}
+      <button
+        type="button"
         className={cx(
-          "absolute top-6 bottom-6 left-5 z-42 flex w-[78px] flex-col items-center gap-2 rounded-[18px] border border-[#f6f4ea]/18 bg-[#05080c]/72 px-2 py-3 font-extrabold backdrop-blur-[10px]",
-          scoreBandClasses[band]
+          "absolute top-4 left-1/2 z-50 min-h-9 -translate-x-1/2 cursor-pointer rounded-full px-4 py-1.5 text-sm font-extrabold shadow-[0_4px_12px_rgba(80,55,0,0.18)] transition-colors",
+          devMode ? "bg-[#2fb86b] text-white" : "bg-[#fdf6e8]/90 text-[#a89a82]"
         )}
+        aria-pressed={devMode}
+        onClick={() => setDevMode((on) => !on)}
       >
-        <span className="text-2xl">{matchPercent}%</span>
-        <div className="relative w-full flex-1 overflow-hidden rounded-full bg-white/10">
-          <div
-            className="score-bar-fill absolute bottom-0 left-0 w-full bg-[#ef5c6b] transition-[height,background] duration-200 ease-linear"
-            style={{ height: `${matchPercent}%` }}
-          />
+        Dev Mode: {devMode ? "On" : "Off"}
+      </button>
+
+      {/* Top-left stack: logo and score. */}
+      <div className="absolute top-4 left-4 z-42 flex w-[214px] flex-col gap-3">
+        <img
+          src="/poses-for-dummies-logo-ai.png"
+          alt="Poses for Dummies"
+          className="w-[200px] select-none filter-[drop-shadow(0_2px_1px_rgba(0,0,0,0.22))_drop-shadow(0_9px_14px_rgba(80,55,0,0.45))]"
+          draggable={false}
+        />
+        <div className={cx(hudCard, "px-4 py-2.5")}>
+          <span className={hudLabel}>Score</span>
+          <div className="mt-0.5 flex items-center gap-2">
+            <StarIcon />
+            <span className="text-[28px] font-black leading-none text-[#2b303b]">{score}</span>
+          </div>
         </div>
-        <span className="text-xs tracking-[0.06em]">{band}</span>
       </div>
 
-      {/* Hand open/closed (grab) indicator. */}
-      {handStates.length > 0 && (
-        <div className="absolute bottom-6 left-24 z-42 flex gap-2">
-          {handStates.map((closed, index) => (
-            <span
-              key={index}
-              className={cx(
-                "rounded-lg border border-[#f6f4ea]/18 bg-[#05080c]/62 px-3 py-2 font-extrabold text-[#d8e2df] backdrop-blur-lg",
-                closed && "border-[#ff2424]/85 bg-[#ff2424]/16 text-[#ff5a5a]"
-              )}
-            >
-              {closed ? "✊ Grab" : "✋ Open"}
-            </span>
-          ))}
+      {/* Match meter down the right side. */}
+      <div className={cx(hudCard, "absolute top-1/2 right-5 z-42 flex h-[300px] w-[128px] -translate-y-1/2 flex-col items-center gap-2 px-4 py-4")}>
+        <span className={hudLabel}>Match</span>
+        <span className="text-[26px] font-black leading-none" style={{ color: matchColor }}>
+          {matchPercent}%
+        </span>
+        <div className="relative w-[72px] flex-1 overflow-hidden rounded-full bg-[#ece0c2] shadow-[inset_0_2px_6px_rgba(120,90,20,0.25)]">
+          <div
+            className="absolute inset-x-0 bottom-0 rounded-full transition-[height,background] duration-200 ease-linear"
+            style={{ height: `${matchPercent}%`, background: matchColor }}
+          />
         </div>
-      )}
+      </div>
+
+      {/* Lives: a row of hearts in the bottom-left corner. */}
+      <div className="absolute bottom-6 left-6 z-42 flex items-center gap-2">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <HeartIcon key={index} filled={index < lives} />
+        ))}
+      </div>
 
       {/* Out-of-frame guidance: dims the screen and pauses with big instructions. */}
       {running && guidance && (
@@ -407,34 +564,59 @@ export function AthleteStage({
         </div>
       )}
 
-      {/* Sidebar toggle. */}
+      {/* Controls (sidebar) toggle, top-right. */}
       <button
         type="button"
-        className="absolute top-4 right-4 z-43 min-h-10 cursor-pointer rounded-lg border border-[#f6f4ea]/22 bg-[#05080c]/62 px-4 py-2 font-extrabold text-[#f6f4ea] backdrop-blur-lg"
+        className={cx(pillSecondary, "absolute top-4 right-4 z-43 px-4 py-2.5 text-[13px] uppercase tracking-[0.08em]")}
         aria-expanded={sidebarOpen}
         onClick={() => setSidebarOpen((open) => !open)}
       >
-        {sidebarOpen ? "✕" : "☰ Controls"}
+        <HamburgerIcon />
+        {sidebarOpen ? "Close" : "Controls"}
       </button>
 
-      {/* Big start prompt only while idle. */}
+      {/* Fullscreen toggle, bottom-right circular button. */}
+      <button
+        type="button"
+        className="absolute right-6 bottom-6 z-43 grid size-14 cursor-pointer place-items-center rounded-full bg-[#fdf6e8] shadow-[inset_0_1.5px_0_rgba(255,255,255,0.95),0_2px_3px_rgba(0,0,0,0.16),0_10px_20px_rgba(70,50,0,0.32)] transition-transform active:translate-y-px"
+        aria-label="Toggle fullscreen"
+        onClick={() => toggleFullscreen(canvasRef.current?.parentElement ?? null)}
+      >
+        <FullscreenIcon />
+      </button>
+
+      {/* While loading (before tracking starts): spinner centered over the hole. On a
+          camera/model error: a short message with a retry button. */}
       {!running && (
         <div className="absolute inset-0 z-41 grid place-items-center">
-          <button className={cx(primaryAction, "px-7 py-4 text-xl")} type="button" onClick={start}>
-            Start Pose Detection
-          </button>
+          {error ? (
+            <div className={cx(hudCard, "flex max-w-[300px] flex-col items-center gap-3 px-6 py-5 text-center")}>
+              <span className="text-base font-extrabold text-[#2b303b]">Couldn't start the camera</span>
+              <span className="text-sm font-semibold text-[#a89a82]">Check camera permissions and try again.</span>
+              <button className={cx(pillPrimary, "px-6 py-3")} type="button" onClick={() => void start()}>
+                Try again
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              <span className="size-16 animate-spin rounded-full border-4 border-[#fdf6e8]/40 border-t-[#ffc83d]" />
+              <span className="rounded-full bg-[#fdf6e8]/90 px-4 py-1.5 text-sm font-extrabold text-[#2b303b] shadow-[0_4px_12px_rgba(80,55,0,0.18)]">
+                {status}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
       {/* Slide-out controls. */}
       <aside
         className={cx(
-          "absolute top-0 right-0 z-42 flex h-full w-[min(340px,84vw)] flex-col gap-4 overflow-y-auto border-l border-[#f6f4ea]/16 bg-[#05080c]/92 px-5 pt-16 pb-5 backdrop-blur-[14px] transition-transform duration-200 ease-out",
+          "absolute top-0 right-0 z-44 flex h-full w-[min(340px,84vw)] flex-col gap-4 overflow-y-auto border-l border-[#00000010] bg-[#fff7e8] px-5 pt-16 pb-5 shadow-[-12px_0_40px_rgba(80,55,0,0.18)] transition-transform duration-200 ease-out",
           sidebarOpen ? "translate-x-0" : "translate-x-full"
         )}
       >
-        <h2 className="m-0 text-lg font-bold">Athlete Controls</h2>
-        <p className={largeStatus}>{status}</p>
+        <h2 className="m-0 text-lg font-black text-[#2b303b]">Athlete Controls</h2>
+        <p className="m-0 text-xl font-extrabold text-[#e08a17]">{status}</p>
 
         {poseOptions && poseOptions.length > 0 && (
           <PoseMenu
@@ -447,16 +629,16 @@ export function AthleteStage({
 
         <div className="flex flex-col gap-2">
           {running ? (
-            <button className={secondaryAction} type="button" onClick={stop}>
+            <button className={pillSecondary} type="button" onClick={stop}>
               Stop
             </button>
           ) : (
-            <button className={primaryAction} type="button" onClick={start}>
+            <button className={pillPrimary} type="button" onClick={() => void start()}>
               Start Pose Detection
             </button>
           )}
           <button
-            className={secondaryAction}
+            className={pillSecondary}
             type="button"
             aria-pressed={showDummy}
             onClick={() => setShowDummy((on) => !on)}
@@ -464,13 +646,13 @@ export function AthleteStage({
             Dummy Overlay: {showDummy ? "On" : "Off"}
           </button>
           <button
-            className={secondaryAction}
+            className={pillSecondary}
             type="button"
             onClick={() => toggleFullscreen(canvasRef.current?.parentElement ?? null)}
           >
             Toggle Fullscreen
           </button>
-          <Link className={secondaryAction} to="/">
+          <Link className={pillSecondary} to="/">
             Back Home
           </Link>
         </div>
@@ -496,7 +678,7 @@ function PoseMenu({ poseOptions, savedPoseIds, selectedPoseId, onSelectPose }: P
     <button
       key={pose.id}
       type="button"
-      className={pose.id === selectedPoseId ? primaryAction : secondaryAction}
+      className={pose.id === selectedPoseId ? pillPrimary : pillSecondary}
       onClick={() => onSelectPose?.(pose)}
     >
       {pose.name}
@@ -506,15 +688,15 @@ function PoseMenu({ poseOptions, savedPoseIds, selectedPoseId, onSelectPose }: P
   return (
     <>
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-bold uppercase text-[#aebbb8]">Starter holes</span>
+        <span className="text-sm font-bold uppercase text-[#a89a82]">Starter holes</span>
         <div className="flex flex-col gap-2">{starters.map(renderButton)}</div>
       </div>
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-bold uppercase text-[#aebbb8]">Saboteur holes</span>
+        <span className="text-sm font-bold uppercase text-[#a89a82]">Saboteur holes</span>
         {saboteurPoses.length > 0 ? (
           <div className="flex flex-col gap-2">{saboteurPoses.map(renderButton)}</div>
         ) : (
-          <p className="m-0 text-sm leading-5 text-[#aebbb8]">
+          <p className="m-0 text-sm leading-5 text-[#8a7d66]">
             None yet. Build and save a pose on the Saboteur page, then return here.
           </p>
         )}
@@ -536,15 +718,14 @@ function toggleFullscreen(el: Element | null) {
 
 type HandClosed = { left: boolean; right: boolean };
 
-/** Draw one live frame: black backdrop, the hole, then the dummy on top. */
-function drawFrame(
-  ctx: CanvasRenderingContext2D,
-  livePose: UniversalPose | null,
-  handClosed: HandClosed,
-  target: UniversalPose,
-  showDummy: boolean,
-  hipFrameX: number | null
-) {
+/** Latest data published by the detect loop for the p5 WEBGL dummy to render. */
+type DummyRender = { pose: UniversalPose; handClosed: HandClosed; hipFrameX: number | null };
+
+/**
+ * Draw one live frame on the 2D canvas: black backdrop + the carved hole. The blue dummy
+ * is rendered separately in 3D on the overlaid p5.js WEBGL canvas.
+ */
+function drawFrame(ctx: CanvasRenderingContext2D, target: UniversalPose) {
   const { width, height } = ctx.canvas;
 
   ctx.clearRect(0, 0, width, height);
@@ -555,10 +736,6 @@ function drawFrame(
   // Hole is carved from the same blob silhouette the saboteur draws. The live pose is
   // already mirrored to match the selfie view, so no extra canvas mirror is needed.
   drawHoleOverlay(ctx, target, width, height);
-
-  if (showDummy && livePose) {
-    drawDummy(ctx, livePose, handClosed, width, height, hipFrameX);
-  }
 }
 
 /** Map the universal box (0..320, 0..480) into the centered portrait hole region. */
@@ -575,14 +752,47 @@ function withRegionTransform(
   ctx.restore();
 }
 
+type ScreenPoint = { x: number; y: number };
+
+/** A 3D sphere centered at a screen point (z = 0 plane). */
+function sphere3D(p: p5, point: ScreenPoint | null, r: number) {
+  if (!point || r <= 0) {
+    return;
+  }
+  p.push();
+  p.translate(point.x, point.y, 0);
+  p.sphere(r);
+  p.pop();
+}
+
+/** A 3D capsule: a cylinder between two screen points, capped with spheres for a pill look. */
+function capsule3D(p: p5, a: ScreenPoint | null, b: ScreenPoint | null, r: number) {
+  if (!a || !b || r <= 0) {
+    return;
+  }
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len > 0.5) {
+    p.push();
+    p.translate((a.x + b.x) / 2, (a.y + b.y) / 2, 0);
+    // p5 cylinders run along +y; rotate that axis onto the bone direction.
+    p.rotateZ(Math.atan2(-dx, dy));
+    p.cylinder(r, len);
+    p.pop();
+  }
+  sphere3D(p, a, r);
+  sphere3D(p, b, r);
+}
+
 /**
- * Draw the athlete's dummy using the SAME blob figure as the saboteur (capsule body +
- * round head + face). The live pose has already been normalized onto the universal
- * dummy, so a tall and a short player produce the same-sized figure that lines up with
- * the hole. Closed/grabbing hands are recolored red on top.
+ * Render the athlete's dummy in 3D (p5.js WEBGL): shaded, pill-shaped limbs built from
+ * cylinders + spheres with directional lighting. The joint layout/radii mirror the 2D
+ * blob figure so the dummy still nests into the carved hole, and it uses the same
+ * universal-box → hole-region mapping (plus the horizontal follow offset) as before.
  */
-function drawDummy(
-  ctx: CanvasRenderingContext2D,
+function drawDummy3D(
+  p: p5,
   pose: UniversalPose,
   handClosed: HandClosed,
   width: number,
@@ -590,44 +800,153 @@ function drawDummy(
   hipFrameX: number | null
 ) {
   const region = holeRegion(width, height);
-  const prims = buildBlobFigure(pose.joints, { withFace: true, faceMode: "happy", color: BLOB_COLOR });
+  // Uniform universal-box-pixel → screen-pixel scale (region preserves the box aspect).
+  const s = region.w / UNIVERSAL_W;
 
   // Slide the (hip-anchored) puppet horizontally to the player's real, mirrored frame
-  // position so moving left/right in front of the camera moves the dummy. The puppet's
-  // hips sit at the hole's hip x; offset by the difference to the live frame spot.
+  // position — same math the 2D dummy used.
   let followX = 0;
   if (hipFrameX !== null) {
     const hipsJoint = pose.joints.find((joint) => joint.name === "hips");
     const dummyHipsX = hipsJoint ? hipsJoint.x : 0.5;
-    const mirroredFrameX = 1 - hipFrameX;
-    followX = mirroredFrameX * width - (region.x0 + dummyHipsX * region.w);
+    followX = (1 - hipFrameX) * width - (region.x0 + dummyHipsX * region.w);
   }
 
-  // Recolor a grabbing hand: a red circle painted over the blue wrist blob.
-  const jointAt = (name: UniversalPose["joints"][number]["name"]) => {
-    const joint = pose.joints.find((candidate) => candidate.name === name);
-    return joint ? { x: joint.x * UNIVERSAL_W, y: joint.y * UNIVERSAL_H } : null;
+  const map = new Map(pose.joints.map((joint) => [joint.name, joint] as const));
+  const at = (name: UniversalPose["joints"][number]["name"]): ScreenPoint | null => {
+    const joint = map.get(name);
+    return joint
+      ? { x: region.x0 + joint.x * region.w + followX, y: region.y0 + joint.y * region.h }
+      : null;
   };
-  const grabPrims: FigurePrimitive[] = [];
-  const leftWrist = jointAt("leftWrist");
-  const rightWrist = jointAt("rightWrist");
-  if (handClosed.left && leftWrist) {
-    grabPrims.push({ kind: "circle", c: leftWrist, r: 17, fill: HAND_GRAB_COLOR });
-  }
-  if (handClosed.right && rightWrist) {
-    grabPrims.push({ kind: "circle", c: rightWrist, r: 17, fill: HAND_GRAB_COLOR });
+
+  const head = at("head");
+  const neck = at("neck");
+  const leftShoulder = at("leftShoulder");
+  const rightShoulder = at("rightShoulder");
+  const leftElbow = at("leftElbow");
+  const rightElbow = at("rightElbow");
+  const leftWrist = at("leftWrist");
+  const rightWrist = at("rightWrist");
+  const hips = at("hips");
+  const leftKnee = at("leftKnee");
+  const rightKnee = at("rightKnee");
+  const leftAnkle = at("leftAnkle");
+  const rightAnkle = at("rightAnkle");
+
+  p.push();
+  // WEBGL origin is the canvas center; shift so we can use top-left screen coordinates.
+  p.translate(-width / 2, -height / 2, 0);
+  p.noStroke();
+  // Strong ambient + soft directional so the dummy reads as 3D without harsh shadows.
+  p.ambientLight(170);
+  p.directionalLight(105, 115, 135, 0.4, 0.55, -0.7);
+  p.fill(BLOB_COLOR);
+
+  // Legs + feet.
+  capsule3D(p, hips, leftKnee, 19 * s);
+  capsule3D(p, leftKnee, leftAnkle, 17 * s);
+  capsule3D(p, hips, rightKnee, 19 * s);
+  capsule3D(p, rightKnee, rightAnkle, 17 * s);
+  foot3D(p, leftAnkle, 19 * s, 12 * s);
+  foot3D(p, rightAnkle, 19 * s, 12 * s);
+
+  // Arms + hands.
+  capsule3D(p, leftShoulder, leftElbow, 14 * s);
+  capsule3D(p, leftElbow, leftWrist, 13 * s);
+  capsule3D(p, rightShoulder, rightElbow, 14 * s);
+  capsule3D(p, rightElbow, rightWrist, 13 * s);
+  sphere3D(p, leftWrist, 15 * s);
+  sphere3D(p, rightWrist, 15 * s);
+
+  // Torso.
+  capsule3D(p, leftShoulder, rightShoulder, 22 * s);
+  capsule3D(p, neck, hips, 25 * s);
+  sphere3D(p, neck, 24 * s);
+  sphere3D(p, hips, 27 * s);
+
+  // Neck link + head.
+  capsule3D(p, head, neck, 14 * s);
+  const headCenter = head ?? neck;
+  if (headCenter) {
+    p.push();
+    p.translate(headCenter.x, headCenter.y, 0);
+    p.ellipsoid(50 * s, 58 * s, 50 * s);
+    p.pop();
   }
 
-  ctx.save();
-  ctx.translate(followX, 0);
-  withRegionTransform(ctx, region, () => paintFigure(ctx, [...prims, ...grabPrims]));
-  ctx.restore();
+  // Grabbing hands turn red.
+  p.fill(HAND_GRAB_COLOR);
+  if (handClosed.left) {
+    sphere3D(p, leftWrist, 17 * s);
+  }
+  if (handClosed.right) {
+    sphere3D(p, rightWrist, 17 * s);
+  }
+
+  // Saboteur-style "happy" face on the front of the head.
+  if (headCenter) {
+    drawFace3D(p, headCenter, s);
+  }
+
+  p.pop();
+}
+
+/**
+ * Draw the same "happy" face the saboteur uses (two eyes, an L-nose, a smile), flattened
+ * onto the front of the 3D head. Offsets mirror `buildFace` in the shared figure module.
+ */
+function drawFace3D(p: p5, headCenter: ScreenPoint, s: number) {
+  p.push();
+  // Sit just in front of the head's front pole (rz = 50) so features aren't occluded.
+  p.translate(headCenter.x, headCenter.y, 50.5 * s);
+
+  // Eyes (filled, crisp dark).
+  p.noStroke();
+  p.fill(FACE_COLOR);
+  p.ellipse(-16 * s, 2 * s, 12 * s, 18 * s);
+  p.ellipse(16 * s, 2 * s, 12 * s, 18 * s);
+
+  // Nose: an L-shaped stroke.
+  p.noFill();
+  p.stroke(FACE_COLOR);
+  p.strokeWeight(2.6 * s);
+  p.beginShape();
+  p.vertex(0, 10 * s);
+  p.vertex(0, 19 * s);
+  p.vertex(7 * s, 19 * s);
+  p.endShape();
+
+  // Smile: sample a quadratic curve from (-13,30) via control (0,42) to (13,30).
+  p.strokeWeight(3 * s);
+  p.beginShape();
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    const mt = 1 - t;
+    const px = (mt * mt * -13 + t * t * 13) * s;
+    const py = (mt * mt * 30 + 2 * mt * t * 42 + t * t * 30) * s;
+    p.vertex(px, py);
+  }
+  p.endShape();
+
+  p.pop();
+}
+
+/** A foot as a flattened 3D ellipsoid sitting just below the ankle. */
+function foot3D(p: p5, ankle: ScreenPoint | null, rx: number, ry: number) {
+  if (!ankle) {
+    return;
+  }
+  p.push();
+  p.translate(ankle.x, ankle.y + ry * 0.2, 0);
+  p.ellipsoid(rx, ry, ry);
+  p.pop();
 }
 
 /**
  * Solid bright-yellow wall with a human-shaped hole punched clear. The area AROUND the
  * pose is opaque; the pose silhouette is left blank so the live camera shows through
- * it (the "hole in the wall" the athlete fits into). Also draws the floor line.
+ * it (the "hole in the wall" the athlete fits into).
  */
 function drawHoleOverlay(
   ctx: CanvasRenderingContext2D,
@@ -636,7 +955,6 @@ function drawHoleOverlay(
   height: number
 ) {
   const region = holeRegion(width, height);
-  const { x0, y0, w: regionW, h: regionH } = region;
 
   // The hole is the blob silhouette (body inflated by HOLE_PADDING, no face) — the
   // exact same geometry the saboteur previews on their screen.
@@ -646,28 +964,39 @@ function drawHoleOverlay(
   // touches the main camera canvas is a plain source-over composite.
   const wallCtx = getWallCtx(width, height);
 
-  // 1) Paint the full solid wall.
-  wallCtx.fillStyle = WALL_COLOR;
+  // 1) Paint the wall with a soft vertical gradient so it reads as a lit 3D surface.
+  const wallGrad = wallCtx.createLinearGradient(0, 0, 0, height);
+  wallGrad.addColorStop(0, "#ffe24f");
+  wallGrad.addColorStop(1, "#eaad00");
+  wallCtx.fillStyle = wallGrad;
   wallCtx.fillRect(0, 0, width, height);
 
-  // 2) Carve the figure silhouette clear (transparent = the hole).
+  // 2) Soft recessed rim: paint a blurred dark silhouette slightly larger than the hole.
+  //    Carving the real hole next leaves a soft inner shadow around the edge, so the
+  //    cutout reads as having depth (slightly 3D).
+  const rim = buildBlobFigure(target.joints, { color: "#3a2700", pad: HOLE_PADDING + 3 });
+  wallCtx.save();
+  wallCtx.shadowColor = "rgba(50, 33, 0, 0.7)";
+  wallCtx.shadowBlur = 26;
+  withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, rim));
+  wallCtx.restore();
+
+  // 3) Carve the figure silhouette clear (transparent = the hole).
   wallCtx.save();
   wallCtx.globalCompositeOperation = "destination-out";
   withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, silhouette));
   wallCtx.restore();
 
-  // 3) Composite the holed wall over the camera: camera shows through the hole, solid
+  // 4) Thin bright highlight on the upper-left of the rim (only on wall pixels) so the
+  //    bevel catches the light — completes the slightly-3D edge.
+  const highlight = buildBlobFigure(target.joints, { color: "rgba(255,245,190,0.55)", pad: HOLE_PADDING });
+  wallCtx.save();
+  wallCtx.globalCompositeOperation = "source-atop";
+  wallCtx.translate(-2, -2.5);
+  withRegionTransform(wallCtx, region, () => paintFigure(wallCtx, highlight));
+  wallCtx.restore();
+
+  // 5) Composite the holed wall over the camera: camera shows through the hole, solid
   //    color everywhere else.
   ctx.drawImage(wallCtx.canvas, 0, 0);
-
-  // 4) Floor line: the ground.
-  const floorY = y0 + regionH * FLOOR_Y;
-  ctx.save();
-  ctx.strokeStyle = "rgba(20, 24, 28, 0.55)";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(x0, floorY);
-  ctx.lineTo(x0 + regionW, floorY);
-  ctx.stroke();
-  ctx.restore();
 }
