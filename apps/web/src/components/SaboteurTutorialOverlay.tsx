@@ -230,34 +230,6 @@ function persistTutorialSeen() {
   }
 }
 
-function useSplashDismissed(): boolean {
-  const [dismissed, setDismissed] = useState(() => {
-    if (typeof document === "undefined") {
-      return false;
-    }
-    return !document.querySelector(".sabotage-splash");
-  });
-
-  useEffect(() => {
-    if (dismissed) {
-      return;
-    }
-
-    const check = () => {
-      if (!document.querySelector(".sabotage-splash")) {
-        setDismissed(true);
-      }
-    };
-
-    check();
-    const observer = new MutationObserver(check);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [dismissed]);
-
-  return dismissed;
-}
-
 function useSpotlightRect(
   resolveTarget: () => Element | null,
   active: boolean,
@@ -638,8 +610,13 @@ function useStepCompletion(
   }, [active, onDismissHighlight, onSaveFailed, stepId]);
 }
 
-export function SaboteurTutorialOverlay({ runKey = 0 }: { runKey?: number }) {
-  const splashDismissed = useSplashDismissed();
+export function SaboteurTutorialOverlay({
+  runKey = 0,
+  splashOpen = false
+}: {
+  runKey?: number;
+  splashOpen?: boolean;
+}) {
   const [visible, setVisible] = useState(() => !readTutorialSeen());
   const [stepIndex, setStepIndex] = useState(0);
   const [targetEngaged, setTargetEngaged] = useState(false);
@@ -657,7 +634,7 @@ export function SaboteurTutorialOverlay({ runKey = 0 }: { runKey?: number }) {
   }, [runKey]);
 
   const step = TUTORIAL_STEPS[stepIndex];
-  const active = visible && splashDismissed;
+  const active = visible && !splashOpen;
 
   useEffect(() => {
     if (!active) {
