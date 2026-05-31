@@ -1,4 +1,5 @@
 export const SOUNDTRACK_ASSETS = {
+  mainMenu: "/assets/main_menu_theme.mp3",
   normal: "/assets/soundtrack_normal.mp3",
   speedy: "/assets/soundtrack_speedy.mp3",
 } as const;
@@ -30,6 +31,9 @@ export const SOUND_EFFECT_ASSETS = {
 
 export type SoundtrackId = keyof typeof SOUNDTRACK_ASSETS;
 export type SoundEffectId = keyof typeof SOUND_EFFECT_ASSETS;
+
+/** Soundtracks that repeat until stopped (menu ambience, not gameplay tracks). */
+export const LOOPING_SOUNDTRACK_IDS = new Set<SoundtrackId>(["mainMenu"]);
 
 /** @deprecated Prefer SOUNDTRACK_ASSETS / SOUND_EFFECT_ASSETS */
 export const AUDIO_ASSETS = {

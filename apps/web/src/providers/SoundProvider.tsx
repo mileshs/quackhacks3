@@ -3,6 +3,7 @@ import {
   applyNeutralSoundtrackPlayback,
   getBeatAtTime,
   getBpmAtTime,
+  LOOPING_SOUNDTRACK_IDS,
   SOUND_EFFECT_ASSETS,
   SOUNDTRACK_ASSETS,
   startTimeWarp,
@@ -128,6 +129,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       soundtrack?.pause();
       if (soundtrack) {
         soundtrack.currentTime = 0;
+        soundtrack.loop = false;
         applyNeutralSoundtrackPlayback(soundtrack);
       }
     }
@@ -148,6 +150,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       }
 
       const soundtrack = getSoundtrack(id);
+      soundtrack.loop = LOOPING_SOUNDTRACK_IDS.has(id);
       soundtrack.currentTime = 0;
       applyNeutralSoundtrackPlayback(soundtrack);
       soundtrack.play().catch((err) => {
