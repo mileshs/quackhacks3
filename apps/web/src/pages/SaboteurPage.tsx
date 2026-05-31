@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type p5 from "p5";
 import {
+  GameRole,
   HOLE_PADDING,
   applyRoundSnapshot,
   buildBlobFigure,
@@ -12,21 +13,34 @@ import {
   type FaceMode,
   type FigurePrimitive,
   type JointName,
-  type RoundSnapshotPayload,
   type SaboteurPowerupProgress,
   type UniversalJoint,
   type UniversalPose
 } from "@quackhacks/shared";
-import { createSocketConnection } from "../lib/realtime";
 import { drawDummyScene3D, type ScreenPoint } from "../lib/dummy3d";
 import { SaboteurSplash } from "../components/SaboteurSplash";
 import { SaboteurDeckPanel } from "../components/SaboteurDeckPanel";
 import { SaboteurPowerupPanel } from "../components/SaboteurPowerupPanel";
 import { SaboteurToolbar } from "../components/SaboteurToolbar";
 import { SaboteurTutorialOverlay } from "../components/SaboteurTutorialOverlay";
+import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
-import { cx, pillDanger, saboteurCard, saboteurJointHandleClass, saboteurPageBg, saboteurPillSecondary, saboteurStage, saboteurStageBoundsRect, saboteurStageFloorLine, saboteurTorsoHandleIcon, saboteurViewport } from "../lib/ui";
+import { SKELETON_ADJUSTMENT_SOUNDS, useSound } from "../providers/SoundProvider";
+import {
+  cx,
+  pillDanger,
+  saboteurCard,
+  saboteurJointHandleClass,
+  saboteurPageBg,
+  saboteurPillSecondary,
+  saboteurStage,
+  saboteurStageBoundsRect,
+  saboteurStageFloorLine,
+  saboteurTorsoHandleIcon,
+  saboteurViewport
+} from "../lib/ui";
+import { useActiveGame } from "../lib/useActiveGame";
 
 const SPLASH_SEEN_STORAGE_KEY = "quackhacks:saboteur:splashSeen";
 const JOINT_HANDLE_RADIUS = 10;
@@ -200,12 +214,14 @@ export function SaboteurPage() {
   const [poseIndex, setPoseIndex] = useState(1);
   const [draftPose, setDraftPose] = useState<UniversalPose | null>(null);
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
-  const [socketStatus, setSocketStatus] = useState("Socket.IO connecting");
+  const [socketStatus, setSocketStatus] = useState("WebSocket connecting");
   const [saveError, setSaveError] = useState<string | null>(null);
   // Bumped on each failed save so the error toast re-mounts and replays its fade even
   // when the message text is identical to the previous attempt.
   const [saveErrorNonce, setSaveErrorNonce] = useState(0);
   const [showHole, setShowHole] = useState(false);
+  const gameControls = useActiveGame();
+  const { connectionStatus, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === "undefined") {
       return true;
@@ -218,7 +234,6 @@ export function SaboteurPage() {
     perfectStreak: 0,
     movesSinceGrant: 0
   });
-  const socketRef = useRef<ReturnType<typeof createSocketConnection> | null>(null);
 
   function dismissSplash() {
     setShowSplash(false);
@@ -275,21 +290,17 @@ export function SaboteurPage() {
   }
 
   useEffect(() => {
-    const socket = createSocketConnection();
-    socketRef.current = socket;
+    setSocketStatus(`WebSocket ${connectionStatus}`);
+  }, [connectionStatus]);
 
-    socket.on("connect", () => setSocketStatus(`Socket.IO connected: ${socket.id}`));
-    socket.on("server:hello", () => setSocketStatus(`Socket.IO ready: ${socket.id}`));
-    socket.on("connect_error", () => setSocketStatus("Socket.IO unavailable"));
-    socket.on("round:snapshot", (payload: RoundSnapshotPayload) => {
-      setPowerupProgress((current) => applyRoundSnapshot(current, payload.band));
-      setSocketStatus(`Round: ${payload.band} (${payload.matchPercent}%)`);
-    });
+  useEffect(() => {
+    if (!lastRoundSnapshot) {
+      return;
+    }
 
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
+    setPowerupProgress((current) => applyRoundSnapshot(current, lastRoundSnapshot.band));
+    setSocketStatus(`Round: ${lastRoundSnapshot.band} (${lastRoundSnapshot.matchPercent}%)`);
+  }, [lastRoundSnapshot]);
 
   function activatePowerup(slotId: string) {
     const slot = powerupProgress.inventory.find((entry) => entry.id === slotId);
@@ -297,9 +308,10 @@ export function SaboteurPage() {
       return;
     }
 
-    socketRef.current?.emit("powerup:activate", {
+    sendPowerup({
       kind: slot.kind,
-      durationMs: DEFAULT_POWERUP_DURATION_MS
+      durationMs: DEFAULT_POWERUP_DURATION_MS,
+      sentAt: new Date().toISOString()
     });
 
     setPowerupProgress((current) => ({
@@ -409,14 +421,14 @@ export function SaboteurPage() {
   }
 
   function broadcastPose(selectedPose: UniversalPose) {
-    socketRef.current?.emit("pose:preview", selectedPose);
+    sendGamePose(selectedPose);
     setSocketStatus(`Sent ${selectedPose.name}`);
   }
 
   const socketReady = /ready|connected/i.test(socketStatus);
 
   return (
-    <>
+    <RoleGameShell role={GameRole.Saboteur} controls={gameControls}>
       <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
       <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
       {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
@@ -500,8 +512,8 @@ export function SaboteurPage() {
         </aside>
       </div>
     </section>
-    <SaboteurTutorialOverlay runKey={tutorialRun} />
-    </>
+      <SaboteurTutorialOverlay runKey={tutorialRun} />
+    </RoleGameShell>
   );
 }
 
@@ -766,10 +778,12 @@ function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
 }
 
 function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
+  const { playExclusiveRandomSoundEffect, stopExclusiveSoundEffect } = useSound();
   const svgRef = useRef<SVGSVGElement>(null);
   const latestPoseRef = useRef(pose);
   const wriggleBaseRef = useRef<UniversalPose | null>(null);
   const bodyDragRef = useRef<{ lastX: number; lastY: number } | null>(null);
+  const adjustmentDragActiveRef = useRef(false);
   const [activeJoint, setActiveJoint] = useState<JointName | null>(null);
   const [isWriggling, setIsWriggling] = useState(false);
   const jointMap = useMemo(() => new Map(pose.joints.map((joint) => [joint.name, joint])), [pose.joints]);
@@ -782,6 +796,22 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
   useEffect(() => {
     latestPoseRef.current = pose;
   }, [pose]);
+
+  useEffect(() => {
+    return () => {
+      adjustmentDragActiveRef.current = false;
+      stopExclusiveSoundEffect();
+    };
+  }, [stopExclusiveSoundEffect]);
+
+  function notifyJointAdjustment() {
+    playExclusiveRandomSoundEffect(SKELETON_ADJUSTMENT_SOUNDS, () => adjustmentDragActiveRef.current);
+  }
+
+  function stopAdjustmentSound() {
+    adjustmentDragActiveRef.current = false;
+    stopExclusiveSoundEffect();
+  }
 
   useEffect(() => {
     if (!isWriggling) {
@@ -830,6 +860,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
 
       const base = wriggleBaseRef.current ?? latestPoseRef.current;
       wriggleBaseRef.current = translatePoseBy(base, dx, dy);
+      notifyJointAdjustment();
       return;
     }
 
@@ -840,9 +871,11 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
     const nextPose = rotateJointTowardPoint(latestPoseRef.current, activeJoint, point.x, point.y);
     latestPoseRef.current = nextPose;
     onChange(nextPose);
+    notifyJointAdjustment();
   }
 
   function stopPointerAction() {
+    stopAdjustmentSound();
     setActiveJoint(null);
     setIsWriggling(false);
     bodyDragRef.current = null;
@@ -879,6 +912,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
           onPointerDown={(event) => {
             event.stopPropagation();
             event.currentTarget.setPointerCapture(event.pointerId);
+            adjustmentDragActiveRef.current = true;
             setActiveJoint(null);
             const point = getPosePoint(event, svgRef.current);
             wriggleBaseRef.current = latestPoseRef.current;
@@ -896,6 +930,7 @@ function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
             onPointerDown={(event) => {
               event.stopPropagation();
               event.currentTarget.setPointerCapture(event.pointerId);
+              adjustmentDragActiveRef.current = true;
               setIsWriggling(false);
               setActiveJoint(joint.name);
             }}

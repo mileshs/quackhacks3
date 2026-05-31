@@ -21,6 +21,9 @@ export const SOUND_EFFECT_ASSETS = {
   shieldUp: "/assets/shield_up.mp3",
   skeletonAdjustment1: "/assets/skeleton_adjustment1.mp3",
   skeletonAdjustment2: "/assets/skeleton_adjustment2.mp3",
+  skeletonAdjustment3: "/assets/skeleton_adjustment3.mp3",
+  skeletonAdjustment4: "/assets/skeleton_adjustment4.mp3",
+  skeletonAdjustment5: "/assets/skeleton_adjustment5.mp3",
   timeWarp: "/assets/time_warp.mp3",
   wtf: "/assets/wtf.mp3",
 } as const;
