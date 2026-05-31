@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AUDIO_ASSETS, getBeatAtTime, getBpmAtTime, startTimeWarp } from "../lib/audioEngine";
+import { cx, eyebrow, pageGrid, pageTitle, panel, primaryAction, secondaryAction } from "../lib/ui";
 
 const volumeStorageKey = "quackhacks.volume";
 const TEST_SOUND_PATH = "/assets/shield_up.mp3";
@@ -115,16 +116,17 @@ export function SettingsPage() {
   }
 
   return (
-    <section className="page-grid settings-page">
-      <div className="page-heading">
-        <p className="eyebrow">Settings</p>
-        <h1>Audio</h1>
+    <section className={cx(pageGrid, "max-w-[720px]")}>
+      <div>
+        <p className={eyebrow}>Settings</p>
+        <h1 className={pageTitle}>Audio</h1>
       </div>
 
-      <div className="settings-controls">
-        <label className="range-control">
+      <div className="flex flex-col gap-8">
+        <label className={cx(panel, "grid gap-2 p-4 font-bold text-[#d8e2df]")}>
           Volume
           <input
+            className="w-full accent-[#ffd65c]"
             type="range"
             min="0"
             max="100"
@@ -134,19 +136,19 @@ export function SettingsPage() {
           <output>{volume}%</output>
         </label>
 
-        <button className="primary-action" type="button" onClick={playTestSound}>
+        <button className={cx(primaryAction, "max-w-[12.5rem] self-start")} type="button" onClick={playTestSound}>
           Test Sound
         </button>
 
-        <button className="primary-action" type="button" onClick={playSoundtrack}>
+        <button className={cx(primaryAction, "max-w-[12.5rem] self-start")} type="button" onClick={playSoundtrack}>
           Play Soundtrack
         </button>
 
-        <button className="secondary-action" type="button" onClick={triggerTimeWarp}>
+        <button className={cx(secondaryAction, "max-w-[12.5rem] self-start")} type="button" onClick={triggerTimeWarp}>
           Time Warp
         </button>
 
-        <p className="tempo-readout">
+        <p className="m-0 font-bold text-[#75e2be] tabular-nums">
           Beat {tempo.beat} &middot; {tempo.bpm ? Math.round(tempo.bpm * 10) / 10 : 0} BPM
         </p>
       </div>
