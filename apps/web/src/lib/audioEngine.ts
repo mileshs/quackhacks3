@@ -7,6 +7,7 @@ export const SOUNDTRACK_ASSETS = {
 } as const;
 
 export const SOUND_EFFECT_ASSETS = {
+  blindness: "/assets/blindness.mp3",
   boo: "/assets/boo.mp3",
   bruh: "/assets/bruh.mp3",
   buttonClick: "/assets/button_click.mp3",
@@ -19,6 +20,7 @@ export const SOUND_EFFECT_ASSETS = {
   great: "/assets/great.mp3",
   healthChip: "/assets/health_chip.mp3",
   icicleFreeze: "/assets/icicle_freeze.mp3",
+  mirror: "/assets/mirror.mp3",
   perfect: "/assets/perfect.mp3",
   shieldBreak: "/assets/shield_break.mp3",
   shieldUp: "/assets/shield_up.mp3",
@@ -39,6 +41,7 @@ export const LOOPING_SOUNDTRACK_IDS = new Set<SoundtrackId>(["mainMenu"]);
 
 /** Shared game moments — dummy / projector client only. */
 export const DUMMY_AUDIENCE_SOUND_EFFECTS = new Set<SoundEffectId>([
+  "blindness",
   "boo",
   "bruh",
   "cheer",
@@ -49,6 +52,7 @@ export const DUMMY_AUDIENCE_SOUND_EFFECTS = new Set<SoundEffectId>([
   "good",
   "great",
   "healthChip",
+  "mirror",
   "perfect",
   "wtf",
 ]);
