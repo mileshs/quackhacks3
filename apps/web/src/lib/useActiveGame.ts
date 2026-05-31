@@ -7,6 +7,7 @@ import {
   type RoundSnapshotPayload,
   type UniversalPose
 } from "@quackhacks/shared";
+import { clearPersistedClaimedRole, writePersistedClaimedRole } from "./claimedRoleStorage";
 import { createGameWebSocket, parseGameSocketMessage, sendGameSocketMessage } from "./realtime";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "unavailable";
@@ -53,11 +54,13 @@ export function useActiveGame() {
       if (message?.type === "role:accepted") {
         setClaimedRole(message.role);
         setRoleError(null);
+        writePersistedClaimedRole(message.role);
       }
 
       if (message?.type === "role:rejected") {
         setClaimedRole(null);
         setRoleError(message.reason);
+        clearPersistedClaimedRole();
       }
 
       if (message?.type === "pose:update") {
@@ -76,11 +79,13 @@ export function useActiveGame() {
     socket.addEventListener("close", () => {
       setConnectionStatus("disconnected");
       setClaimedRole(null);
+      clearPersistedClaimedRole();
     });
 
     socket.addEventListener("error", () => {
       setConnectionStatus("unavailable");
       setClaimedRole(null);
+      clearPersistedClaimedRole();
     });
 
     return () => {
@@ -101,6 +106,7 @@ export function useActiveGame() {
     startGame: useCallback(() => send({ type: "game:start" }), [send]),
     endGame: useCallback(() => send({ type: "game:end" }), [send]),
     completeGame: useCallback(() => send({ type: "game:complete" }), [send]),
+    defeatGame: useCallback(() => send({ type: "game:defeat" }), [send]),
     devStartGame: useCallback(() => send({ type: "game:dev-start" }), [send]),
     claimRole: useCallback((role: GameRole) => send({ type: "role:claim", role }), [send]),
     sendRoleHeartbeat: useCallback((role: GameRole) => send({ type: "role:heartbeat", role }), [send]),

@@ -88,6 +88,11 @@ export class GlobalGame extends DurableObject<Cloudflare.Env> {
       return;
     }
 
+    if (message.type === "game:defeat") {
+      await this.endGame("lives-depleted");
+      return;
+    }
+
     if (message.type === "game:dev-start") {
       await this.devStartGame();
       return;
@@ -537,6 +542,7 @@ function parseClientMessage(rawMessage: string): GameClientMessage | null {
       parsed.type === "game:start" ||
       parsed.type === "game:end" ||
       parsed.type === "game:complete" ||
+      parsed.type === "game:defeat" ||
       parsed.type === "game:dev-start"
     ) {
       return { type: parsed.type };

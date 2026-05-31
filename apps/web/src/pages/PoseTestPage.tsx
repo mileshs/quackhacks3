@@ -1,21 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GameRole, starterPoses, type UniversalPose } from "@quackhacks/shared";
+import { useNavigate } from "react-router-dom";
 import { AthleteStage } from "../components/AthleteStage";
 import { DummySplash } from "../components/DummySplash";
 import { GameTempoBridge } from "../components/GameTempoBridge";
 import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses } from "../lib/savedPoses";
+<<<<<<< HEAD
 import type { TempoState } from "../lib/tempo";
+=======
+>>>>>>> origin/main
 import { secondaryAction } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
 
 export function PoseTestPage() {
+  const navigate = useNavigate();
   const [savedPoses, setSavedPoses] = useState<UniversalPose[]>(loadSavedPoses);
   const [previewPose, setPreviewPose] = useState<UniversalPose | null>(null);
   const [selectedId, setSelectedId] = useState(starterPoses[0]?.id ?? "");
   const gameControls = useActiveGame();
+<<<<<<< HEAD
   const { lastPose, lastPowerup, sendRoundSnapshot } = gameControls;
   const [tempo, setTempo] = useState<TempoState | null>(null);
+=======
+  const { game, lastPose, lastPowerup, sendRoundSnapshot, defeatGame } = gameControls;
+>>>>>>> origin/main
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
@@ -52,6 +61,15 @@ export function PoseTestPage() {
 
   const showIntro = useCallback(() => setShowSplash(true), []);
 
+  const handleAllLivesLost = useCallback(() => {
+    if (game?.activeGame) {
+      defeatGame();
+      return;
+    }
+
+    navigate("/score?winner=saboteur");
+  }, [defeatGame, game?.activeGame, navigate]);
+
   return (
     <>
       {showSplash ? <DummySplash onDismiss={dismissSplash} /> : null}
@@ -70,7 +88,8 @@ export function PoseTestPage() {
           onSelectPose={handleSelectPose}
           powerupActivation={lastPowerup}
           onFinishWall={sendRoundSnapshot}
-          tempo={tempo}
+          playingSessionKey={game?.playingStartedAt ?? null}
+          onAllLivesLost={handleAllLivesLost}
         />
       </RoleGameShell>
     </>

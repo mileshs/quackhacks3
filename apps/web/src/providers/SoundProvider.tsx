@@ -3,6 +3,7 @@ import {
   applyNeutralSoundtrackPlayback,
   getBeatAtTime,
   getBpmAtTime,
+  LOOPING_SOUNDTRACK_IDS,
   SOUND_EFFECT_ASSETS,
   SOUNDTRACK_ASSETS,
   startTimeWarp,
@@ -35,6 +36,7 @@ type SoundContextValue = {
   setSoundtrackVolume: (volume: number) => void;
   setSoundEffectsVolume: (volume: number) => void;
   playSoundEffect: (id: SoundEffectId) => void;
+  playSoundEffectWithEnded: (id: SoundEffectId, onEnded?: () => void) => void;
   playExclusiveRandomSoundEffect: (candidates: readonly SoundEffectId[], shouldReplay?: () => boolean) => void;
   stopExclusiveSoundEffect: () => void;
   playSoundtrack: (id: SoundtrackId) => void;
@@ -128,6 +130,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       soundtrack?.pause();
       if (soundtrack) {
         soundtrack.currentTime = 0;
+        soundtrack.loop = false;
         applyNeutralSoundtrackPlayback(soundtrack);
       }
     }
@@ -148,6 +151,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       }
 
       const soundtrack = getSoundtrack(id);
+      soundtrack.loop = LOOPING_SOUNDTRACK_IDS.has(id);
       soundtrack.currentTime = 0;
       applyNeutralSoundtrackPlayback(soundtrack);
       soundtrack.play().catch((err) => {
@@ -164,6 +168,29 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       soundEffect.currentTime = 0;
       soundEffect.play().catch((err) => {
         console.warn("Sound effect playback blocked or failed:", err);
+      });
+    },
+    [getSoundEffect]
+  );
+
+  const playSoundEffectWithEnded = useCallback(
+    (id: SoundEffectId, onEnded?: () => void) => {
+      const soundEffect = getSoundEffect(id);
+
+      const handleEnded = () => {
+        soundEffect.removeEventListener("ended", handleEnded);
+        onEnded?.();
+      };
+
+      if (onEnded) {
+        soundEffect.addEventListener("ended", handleEnded);
+      }
+
+      soundEffect.currentTime = 0;
+      soundEffect.play().catch((err) => {
+        console.warn("Sound effect playback blocked or failed:", err);
+        soundEffect.removeEventListener("ended", handleEnded);
+        onEnded?.();
       });
     },
     [getSoundEffect]
@@ -338,6 +365,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       setSoundtrackVolume,
       setSoundEffectsVolume,
       playSoundEffect,
+      playSoundEffectWithEnded,
       playExclusiveRandomSoundEffect,
       stopExclusiveSoundEffect,
       playSoundtrack,
@@ -354,6 +382,7 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       setSoundtrackVolume,
       setSoundEffectsVolume,
       playSoundEffect,
+      playSoundEffectWithEnded,
       playExclusiveRandomSoundEffect,
       stopExclusiveSoundEffect,
       playSoundtrack,

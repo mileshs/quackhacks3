@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { flushQueuedGameNotice } from "../lib/gameNotifications";
 import { cx } from "../lib/ui";
 import { useActiveGame } from "../lib/useActiveGame";
+import { useSound } from "../providers/SoundProvider";
 
 /** Saboteur accent — matches `pillDanger` / saboteur HUD red in `ui.ts`. */
 const SABOTEUR_COLOR = "#ef5c6b";
@@ -163,6 +164,7 @@ function HomeDecor() {
 
 export function HomePage() {
   const navigate = useNavigate();
+  const { playSoundtrack, stopSoundtrack } = useSound();
   const { game, startGame, endGame } = useActiveGame();
   const isGameActive = game?.activeGame ?? false;
   const isDummyTaken = game?.roles[GameRole.Dummy].status === "occupied";
@@ -172,6 +174,11 @@ export function HomePage() {
   useEffect(() => {
     flushQueuedGameNotice();
   }, []);
+
+  useEffect(() => {
+    playSoundtrack("mainMenu");
+    return () => stopSoundtrack();
+  }, [playSoundtrack, stopSoundtrack]);
 
   function joinRole(role: GameRole) {
     if (role === GameRole.Saboteur && !isSaboteurTaken) {

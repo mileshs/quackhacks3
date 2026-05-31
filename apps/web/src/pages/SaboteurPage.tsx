@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type PointerEvent, type SetStateAction } from "react";
 import type p5 from "p5";
 import {
   GameRole,
@@ -28,7 +28,8 @@ import { RoleGameShell } from "../components/RoleGameShell";
 import { loadSavedPoses, persistSavedPoses } from "../lib/savedPoses";
 import { useChrome } from "../lib/chrome";
 import { useDevSection, useSettings } from "../lib/settings";
-import { SKELETON_ADJUSTMENT_SOUNDS, useSound } from "../providers/SoundProvider";
+import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
+import { SKELETON_ADJUSTMENT_SOUNDS } from "../providers/SoundProvider";
 import {
   cx,
   saboteurCard,
@@ -199,6 +200,38 @@ function SaveErrorToast({ message, onDismiss }: { message: string; onDismiss: ()
   );
 }
 
+/** Must mount inside `RoleGameShell` / `GameTempoProvider` so tempo is non-null while playing. */
+function SaboteurTempoPoseFeeder({
+  queue,
+  poseList,
+  broadcastPose,
+  setQueue
+}: {
+  queue: UniversalPose[];
+  poseList: UniversalPose[];
+  broadcastPose: (pose: UniversalPose) => void;
+  setQueue: Dispatch<SetStateAction<UniversalPose[]>>;
+}) {
+  const tempo = useGameTempo();
+  const lastFedCycleRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!tempo || tempo.cycle === lastFedCycleRef.current) {
+      return;
+    }
+    lastFedCycleRef.current = tempo.cycle;
+
+    if (queue.length > 0) {
+      broadcastPose(queue[0]!);
+      setQueue((current) => current.slice(1));
+    } else if (poseList.length > 0) {
+      broadcastPose(poseList[Math.floor(Math.random() * poseList.length)]!);
+    }
+  }, [tempo?.cycle, queue, poseList, broadcastPose, setQueue]);
+
+  return null;
+}
+
 export function SaboteurPage() {
   const { setNavHidden } = useChrome();
   // Dev mode (from the global Settings menu) reveals the developer-only chrome: the
@@ -220,8 +253,11 @@ export function SaboteurPage() {
   const { connectionStatus, game, lastRoundSnapshot, sendPose: sendGamePose, sendPowerup } = gameControls;
   // Saboteur-only queue of poses to feed the dummy, one per 8-count cycle.
   const [queue, setQueue] = useState<UniversalPose[]>([]);
+<<<<<<< HEAD
   const [tempo, setTempo] = useState<TempoState | null>(null);
   const lastFedCycleRef = useRef<number | null>(null);
+=======
+>>>>>>> origin/main
   const [showSplash, setShowSplash] = useState(true);
   const [tutorialRun, setTutorialRun] = useState(0);
   const [powerupProgress, setPowerupProgress] = useState<SaboteurPowerupProgress>({
@@ -403,24 +439,6 @@ export function SaboteurPage() {
     setSocketStatus(`Queued ${displayPose.name}`);
   }
 
-  // On each new 8-count cycle, feed the dummy the next queued pose; if the queue is empty,
-  // play a random pose from the gallery so the loop never stalls.
-  useEffect(() => {
-    if (!tempo || tempo.cycle === lastFedCycleRef.current) {
-      return;
-    }
-    lastFedCycleRef.current = tempo.cycle;
-
-    if (queue.length > 0) {
-      broadcastPose(queue[0]!);
-      setQueue((current) => current.slice(1));
-    } else if (poseList.length > 0) {
-      broadcastPose(poseList[Math.floor(Math.random() * poseList.length)]!);
-    }
-    // Guarded by the cycle-change check above, so re-runs from queue/poseList changes no-op.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tempo?.cycle, queue, poseList]);
-
   function savePose() {
     if (!draftPose) {
       return;
@@ -466,9 +484,20 @@ export function SaboteurPage() {
     <>
       {showSplash ? <SaboteurSplash onDismiss={dismissSplash} /> : null}
       <RoleGameShell role={GameRole.Saboteur} controls={gameControls}>
+<<<<<<< HEAD
         <GameTempoBridge onTempo={setTempo} />
         <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
         <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
+=======
+      <SaboteurTempoPoseFeeder
+        queue={queue}
+        poseList={poseList}
+        broadcastPose={broadcastPose}
+        setQueue={setQueue}
+      />
+      <div className={cx("pointer-events-none fixed inset-0 z-0", saboteurPageBg)} aria-hidden="true" />
+      <section className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-4">
+>>>>>>> origin/main
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,300px)] lg:items-stretch">
         <div className="flex min-h-0 flex-col gap-3">
@@ -873,7 +902,7 @@ function SaboteurHolePreview({ pose }: { pose: UniversalPose }) {
 }
 
 function SaboteurPoseEditor({ pose, onChange }: SaboteurPoseEditorProps) {
-  const { playExclusiveRandomSoundEffect, stopExclusiveSoundEffect } = useSound();
+  const { playExclusiveRandomSoundEffect, stopExclusiveSoundEffect } = useRoleScopedSound(GameRole.Saboteur);
   const svgRef = useRef<SVGSVGElement>(null);
   const latestPoseRef = useRef(pose);
   const wriggleBaseRef = useRef<UniversalPose | null>(null);

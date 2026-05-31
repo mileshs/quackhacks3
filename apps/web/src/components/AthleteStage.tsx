@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type p5 from "p5";
 import {
   DEFAULT_POWERUP_DURATION_MS,
+  GameRole,
   HOLE_PADDING,
   buildBlobFigure,
   comparePoses,
@@ -23,8 +24,11 @@ import {
   type PoseFrame
 } from "../lib/poseTracker";
 import { drawDummyScene3D, type HandClosed, type ScreenPoint } from "../lib/dummy3d";
+import { useRoleScopedSound } from "../hooks/useRoleScopedSound";
+import { useDefeatSequence } from "../lib/defeatSequence";
+import { useSound } from "../providers/SoundProvider";
 import { useDevSection, useSettings } from "../lib/settings";
-import { type TempoState } from "../lib/tempo";
+import { isHoleVisiblePhase, useGameTempo } from "../lib/tempo";
 import { cx } from "../lib/ui";
 import { SettingsToggle } from "./SettingsToggle";
 
@@ -98,9 +102,13 @@ type AthleteStageProps = {
   onSelectPose?: (pose: UniversalPose) => void;
   powerupActivation?: PowerupActivatePayload | null;
   onFinishWall?: (payload: RoundSnapshotPayload) => void;
-  /** Synced 8-count phase; null when the game isn't in the playing phase. */
-  tempo?: TempoState | null;
+  /** Resets lives when a new playing session starts (e.g. `game.playingStartedAt`). */
+  playingSessionKey?: string | null;
+  /** Called once after the death sound ends when all lives are lost. */
+  onAllLivesLost?: () => void;
 };
+
+const STARTING_LIVES = 3;
 
 // The hole keeps a human portrait shape (not stretched to the camera's aspect): a
 // centered "doorway". HOLE_SCALE is the fraction of the frame height it occupies.
@@ -578,8 +586,13 @@ export function AthleteStage({
   onSelectPose,
   powerupActivation,
   onFinishWall,
-  tempo
+  playingSessionKey,
+  onAllLivesLost
 }: AthleteStageProps) {
+  const tempo = useGameTempo();
+  const { beginDefeatSequence } = useDefeatSequence();
+  const { stopSoundtrack } = useSound();
+  const { playSoundEffect, playSoundEffectWithEnded } = useRoleScopedSound(GameRole.Dummy);
   const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -598,19 +611,9 @@ export function AthleteStage({
   // Brief snapshot flash, and a guard so the count-8 score fires once per cycle.
   const [flash, setFlash] = useState(false);
   const lastSnapshotCycleRef = useRef<number | null>(null);
-
-  // On the count-8 snapshot beat: record the score once and trigger the flash.
-  useEffect(() => {
-    if (tempo?.phase !== "snapshot" || tempo.cycle === lastSnapshotCycleRef.current) {
-      return;
-    }
-    lastSnapshotCycleRef.current = tempo.cycle;
-    finishWall();
-    setFlash(true);
-    const id = window.setTimeout(() => setFlash(false), 220);
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tempo?.phase, tempo?.cycle]);
+  /** Latched at count 5 each cycle; used for hole draw + scoring on beats 5–8. */
+  const visibleHoleRef = useRef<UniversalPose | null>(null);
+  const lastHoleLatchCycleRef = useRef<number | null>(null);
 
   // The dummy is rendered on a separate p5.js WEBGL canvas overlaid on the 2D one. The
   // detect loop publishes the latest pose here and the p5 draw loop reads it.
@@ -629,10 +632,16 @@ export function AthleteStage({
   const [band, setBand] = useState<ScoreBand>("CRASH");
   const [score, setScore] = useState(0);
   const [scoreFlights, setScoreFlights] = useState<ScoreFlight[]>([]);
-  const [lives] = useState(3);
+  const [lives, setLives] = useState(STARTING_LIVES);
+  const livesRef = useRef(STARTING_LIVES);
+  const defeatedRef = useRef(false);
+  const lastLifeLossCycleRef = useRef<number | null>(null);
+  const onAllLivesLostRef = useRef(onAllLivesLost);
+  onAllLivesLostRef.current = onAllLivesLost;
   const [showDummy, setShowDummy] = useState(true);
   const [showDebugDashboard, setShowDebugDashboard] = useState(false);
   const [guidance, setGuidance] = useState<string | null>(null);
+  const [showGameOverOverlay, setShowGameOverOverlay] = useState(false);
   const [debugInfo, setDebugInfo] = useState<PoseDebugInfo | null>(null);
   // Dev mode comes from the global Settings menu now. When on, the game never pauses for
   // framing, and the athlete dev controls (pose picker etc.) appear in the Settings dropdown.
@@ -648,6 +657,7 @@ export function AthleteStage({
   const bandRef = useRef<ScoreBand>("CRASH");
   const guidanceRef = useRef<string | null>(null);
   matchPercentRef.current = matchPercent;
+  livesRef.current = lives;
   runningRef.current = running;
   bandRef.current = band;
   guidanceRef.current = guidance;
@@ -750,6 +760,19 @@ export function AthleteStage({
   );
 
   useEffect(() => {
+    if (!playingSessionKey) {
+      return;
+    }
+
+    setLives(STARTING_LIVES);
+    livesRef.current = STARTING_LIVES;
+    defeatedRef.current = false;
+    lastLifeLossCycleRef.current = null;
+    visibleHoleRef.current = null;
+    lastHoleLatchCycleRef.current = null;
+  }, [playingSessionKey]);
+
+  useEffect(() => {
     if (!powerupActivation) {
       return;
     }
@@ -762,14 +785,113 @@ export function AthleteStage({
     powerupTimerRef.current = window.setTimeout(() => setActivePowerup(null), duration);
   }, [powerupActivation]);
 
-  function finishWall() {
+  const getScoringHoleTarget = useCallback(() => {
+    return visibleHoleRef.current ?? targetRef.current;
+  }, []);
+
+  const getSnapshotMatchPercent = useCallback(() => {
+    const pose = dummyRenderRef.current?.pose;
+    if (pose) {
+      return comparePoses(pose, getScoringHoleTarget());
+    }
+
+    return matchPercentRef.current;
+  }, [getScoringHoleTarget]);
+
+  const finishWall = useCallback(() => {
+    const judgedMatch = getSnapshotMatchPercent();
+    const judgedBand = scoreBandFromMatch(judgedMatch);
+    matchPercentRef.current = judgedMatch;
+    bandRef.current = judgedBand;
+    setMatchPercent(judgedMatch);
+    setBand(judgedBand);
+
     awardCurrentScore();
     onFinishWall?.({
-      matchPercent: matchPercentRef.current,
-      band: bandRef.current,
+      matchPercent: judgedMatch,
+      band: judgedBand,
       sentAt: new Date().toISOString()
     });
-  }
+
+    if (defeatedRef.current) {
+      return;
+    }
+
+    if (judgedBand !== "CRASH") {
+      return;
+    }
+
+    const cycleKey = tempo?.cycle ?? null;
+    if (cycleKey !== null && lastLifeLossCycleRef.current === cycleKey) {
+      return;
+    }
+
+    if (cycleKey !== null) {
+      lastLifeLossCycleRef.current = cycleKey;
+    }
+
+    const nextLives = livesRef.current - 1;
+    livesRef.current = nextLives;
+    setLives(nextLives);
+    playSoundEffect("healthChip");
+
+    if (nextLives > 0) {
+      return;
+    }
+
+    defeatedRef.current = true;
+    beginDefeatSequence();
+    setShowGameOverOverlay(true);
+    stopSoundtrack();
+    playSoundEffectWithEnded("death", () => {
+      playSoundEffectWithEnded("gameOver", () => {
+        onAllLivesLostRef.current?.();
+      });
+    });
+  }, [
+    awardCurrentScore,
+    beginDefeatSequence,
+    getSnapshotMatchPercent,
+    onFinishWall,
+    playSoundEffect,
+    playSoundEffectWithEnded,
+    stopSoundtrack,
+    tempo
+  ]);
+
+  // Latch hole at count 5; hide at count 1 of each cycle.
+  useLayoutEffect(() => {
+    if (!tempo) {
+      return;
+    }
+
+    if (tempo.count === 1 && tempo.phase === "rest") {
+      visibleHoleRef.current = null;
+      return;
+    }
+
+    if (tempo.count === 5 && tempo.cycle !== lastHoleLatchCycleRef.current) {
+      lastHoleLatchCycleRef.current = tempo.cycle;
+      visibleHoleRef.current = targetRef.current;
+    }
+  }, [tempo?.count, tempo?.phase, tempo?.cycle]);
+
+  // Count 8: judge the frozen dummy pose, drop a life on CRASH, flash — before paint.
+  useLayoutEffect(() => {
+    if (!tempo || tempo.count !== 8 || tempo.phase !== "snapshot") {
+      return;
+    }
+
+    if (tempo.cycle === lastSnapshotCycleRef.current) {
+      return;
+    }
+
+    lastSnapshotCycleRef.current = tempo.cycle;
+    finishWall();
+    setFlash(true);
+    const id = window.setTimeout(() => setFlash(false), 220);
+    return () => window.clearTimeout(id);
+  }, [tempo?.count, tempo?.phase, tempo?.cycle, finishWall]);
 
   // Spin up the p5.js WEBGL canvas that renders the 3D dummy on top of the 2D hole. The
   // canvas mirrors the 2D canvas's resolution + CSS so the dummy lines up with the hole.
@@ -921,20 +1043,27 @@ export function AthleteStage({
 
           // Always retarget onto the hole's bone lengths before positioning. Dev mode only
           // affects UI guidance; it must not change the geometry used for rendering/scoring.
+          const phase = tempoPhaseRef.current;
+          const holeTarget = !phase
+            ? targetRef.current
+            : isHoleVisiblePhase(phase)
+              ? visibleHoleRef.current
+              : null;
+          const scoringTarget = visibleHoleRef.current ?? targetRef.current;
+
           let dummyPose: UniversalPose | null = null;
           let bodyPose: UniversalPose | null = null;
           if (live) {
-            bodyPose = retargetPose(live, targetRef.current);
+            bodyPose = retargetPose(live, scoringTarget);
             dummyPose =
               hipFrameX !== null && ctx
-                ? anchorDummyToPlayer(bodyPose, targetRef.current, hipFrameX, ctx.canvas.width, ctx.canvas.height)
+                ? anchorDummyToPlayer(bodyPose, scoringTarget, hipFrameX, ctx.canvas.width, ctx.canvas.height)
                 : bodyPose;
           }
 
           // Tempo gating: on the "snapshot" beat the dummy + score freeze (hold the last
           // pose-phase frame); scoring only runs during the "pose" beats. No tempo (e.g.
           // standalone/dev) = everything runs normally.
-          const phase = tempoPhaseRef.current;
           const frozen = phase === "snapshot";
           const scoring = !phase || phase === "pose";
 
@@ -943,7 +1072,7 @@ export function AthleteStage({
             dummyRenderRef.current = dummyPose ? { pose: dummyPose, handClosed } : null;
           }
           if (ctx) {
-            drawFrame(ctx, targetRef.current);
+            drawFrame(ctx, holeTarget);
           }
 
           const now = performance.now();
@@ -961,7 +1090,7 @@ export function AthleteStage({
                 hipFrameX,
                 bodyPose,
                 dummyPose,
-                targetRef.current
+                scoringTarget
               )
             );
           }
@@ -970,7 +1099,7 @@ export function AthleteStage({
             lastMatchUpdate.current = now;
             // Score the same positioned body that is rendered: percent of dummy silhouette
             // inside the visible hole, so horizontal drift tanks the meter naturally.
-            const percent = comparePoses(dummyPose, targetRef.current);
+            const percent = comparePoses(dummyPose, scoringTarget);
             setMatchPercent(percent);
             setBand(scoreBandFromMatch(percent));
           }
@@ -1141,12 +1270,20 @@ export function AthleteStage({
         </div>
       </div>
 
-      {/* Lives: a row of hearts in the bottom-left corner. */}
-      <div className="absolute bottom-6 left-6 z-42 flex items-center gap-2">
-        {Array.from({ length: 3 }).map((_, index) => (
-          <HeartIcon key={index} filled={index < lives} />
-        ))}
+      {/* Lives: filled hearts only; rightmost unmounts when a life is lost. */}
+      <div className="absolute bottom-6 left-6 z-42 flex min-w-[10.5rem] items-center gap-2">
+        {Array.from({ length: STARTING_LIVES }).map((_, index) =>
+          index < lives ? <HeartIcon key={index} filled /> : null
+        )}
       </div>
+
+      {showGameOverOverlay ? (
+        <div className="pointer-events-none absolute inset-0 z-48 flex items-center justify-center bg-[#04070b]/85 text-center backdrop-blur-md">
+          <span className="px-6 text-[clamp(2.5rem,8vw,6rem)] font-black tracking-[0.04em] text-[#fdf6e8] [text-shadow:0_2px_24px_rgba(0,0,0,0.75)]">
+            GAME OVER
+          </span>
+        </div>
+      ) : null}
 
       {/* Out-of-frame guidance: dims the screen and pauses with big instructions. */}
       {running && guidance && (
@@ -1402,13 +1539,17 @@ type DummyRender = { pose: UniversalPose; handClosed: HandClosed };
  * Draw one live frame on the 2D canvas: black backdrop + the carved hole. The blue dummy
  * is rendered separately in 3D on the overlaid p5.js WEBGL canvas.
  */
-function drawFrame(ctx: CanvasRenderingContext2D, target: UniversalPose) {
+function drawFrame(ctx: CanvasRenderingContext2D, target: UniversalPose | null) {
   const { width, height } = ctx.canvas;
 
   ctx.clearRect(0, 0, width, height);
   // Solid black backdrop instead of the live camera, so the hole reads as black.
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, width, height);
+
+  if (!target) {
+    return;
+  }
 
   // Hole is carved from the same blob silhouette the saboteur draws. The live pose is
   // already mirrored to match the selfie view, so no extra canvas mirror is needed.

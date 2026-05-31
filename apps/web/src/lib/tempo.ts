@@ -54,6 +54,11 @@ export function phaseForCount(count: number): TempoPhase {
   return "snapshot";
 }
 
+/** True when the dummy should render the target hole (counts 5–8). Null phase = no tempo gate. */
+export function isHoleVisiblePhase(phase: TempoPhase | null): boolean {
+  return phase === null || phase === "pose" || phase === "snapshot";
+}
+
 export function gameTempoFromPlayback(seconds: number, duration: number): TempoState | null {
   if (!Number.isFinite(duration) || duration <= 0) {
     return null;
